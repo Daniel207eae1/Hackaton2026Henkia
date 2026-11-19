@@ -1,0 +1,142 @@
+# Catálogo de acciones (§3.6). Fuente ÚNICA del aviso obligatorio, la reversión y la plantilla de rechazo.
+# Origen: front_validacion/datos.js (supuestos por validar con la mesa de servicio, LEEME §1).
+# tool_mcp: tool del servidor MCP zabbix-ofimatica que ejecuta la acción (ADR 0007).
+# ejecutar_comando_generico (MCP) NO está en este catálogo: bloqueada en el cliente.
+# Las acciones con politica: prohibida NO se registran como herramienta ni como script de Zabbix.
+version: 1
+acciones:
+  - id: consultar_contexto
+    tool_mcp: null  # lecturas automáticas: telemetria_equipo, version_office, estado_licencia_office, estado_onedrive, estado_cola_impresion
+    nombre: "Consultar telemetría, directorio y tablero"
+    descripcion: "Leer el resumen de telemetría del equipo, el directorio y el tablero de estado de servicios."
+    riesgo: "bajo"
+    politica: "automatica"
+    aviso_obligatorio: "Solo lectura: no cambia nada en tu equipo."
+    reversion: "No aplica (solo lectura)."
+    precondiciones: "Ninguna."
+    reversible: true
+    verificacion: "No aplica."
+  - id: leer_logs
+    tool_mcp: leer_logs_aplicacion
+    nombre: "Leer los registros (logs) de la aplicación"
+    descripcion: "Leer los registros técnicos de la aplicación en tu equipo y pasarlos al extractor en cuarentena."
+    riesgo: "bajo"
+    politica: "consentimiento"
+    aviso_obligatorio: "Leeré los registros técnicos de la aplicación en tu equipo. No leo tus correos, chats ni archivos, y los datos personales que aparezcan se enmascaran."
+    reversion: "No cambia nada en tu equipo: es solo lectura."
+    precondiciones: "Ninguna."
+    reversible: true
+    verificacion: "El extractor devuelve campos validados con esquema."
+  - id: reparacion_rapida_office
+    tool_mcp: reparacion_rapida_office
+    nombre: "Reparación rápida de Office"
+    descripcion: "Ejecutar la reparación rápida de Microsoft 365 Apps en tu equipo."
+    riesgo: "medio"
+    politica: "consentimiento"
+    aviso_obligatorio: "Cerrará todas las aplicaciones de Office (Outlook, Word, Excel, PowerPoint y Teams). Guarda tu trabajo antes. Tarda unos 5 minutos."
+    reversion: "No borra datos ni configuración. Si no resuelve el problema, se pasa a la siguiente opción."
+    precondiciones: "Office instalado y sin otra reparación en curso."
+    reversible: true
+    verificacion: "Volver a abrir la aplicación afectada y revisar el registro."
+  - id: recrear_perfil_outlook
+    tool_mcp: recrear_perfil_outlook
+    nombre: "Recrear el perfil de Outlook"
+    descripcion: "Crear un perfil nuevo de Outlook y dejar el anterior desactivado."
+    riesgo: "medio"
+    politica: "aprobacion_n2"
+    aviso_obligatorio: "Cerrará Outlook y creará un perfil nuevo. Tu correo se volverá a descargar desde el servidor, lo que puede tardar varios minutos. El perfil anterior se conserva desactivado."
+    reversion: "Se puede volver al perfil anterior, que no se borra."
+    precondiciones: "Aprobación de N2 vigente."
+    reversible: true
+    verificacion: "Outlook abre y sincroniza la bandeja de entrada."
+  - id: limpiar_cache_teams
+    tool_mcp: limpiar_cache_teams
+    nombre: "Limpiar la caché de Teams"
+    descripcion: "Borrar los archivos temporales (caché) de Teams en tu equipo."
+    riesgo: "bajo"
+    politica: "consentimiento"
+    aviso_obligatorio: "Cerrará Teams y tendrás que volver a iniciar sesión. No se borran chats, reuniones ni archivos."
+    reversion: "No hace falta revertir: Teams vuelve a crear la caché al abrirse."
+    precondiciones: "Sin llamada o reunión en curso."
+    reversible: true
+    verificacion: "Llamada de prueba de Teams con entrada y salida de audio."
+  - id: reiniciar_cola_impresion
+    tool_mcp: reiniciar_cola_impresion
+    nombre: "Reiniciar la cola de impresión"
+    descripcion: "Vaciar y reiniciar la cola de impresión de tu equipo."
+    riesgo: "bajo"
+    politica: "consentimiento"
+    aviso_obligatorio: "Se cancelarán TODOS los trabajos pendientes en la cola de impresión. Tendrás que volver a enviar lo que necesites imprimir."
+    reversion: "Lo cancelado no se recupera desde la cola: hay que volver a enviar los documentos."
+    precondiciones: "Impresora en línea."
+    reversible: false
+    verificacion: "La cola queda vacía y un trabajo nuevo se imprime."
+  - id: restaurar_version_anterior
+    tool_mcp: null  # el MCP no la ofrece: hoy se escala a N2
+    nombre: "Restaurar una versión anterior de un archivo"
+    descripcion: "Restaurar desde el historial de versiones de OneDrive la versión elegida del archivo."
+    riesgo: "medio"
+    politica: "consentimiento"
+    aviso_obligatorio: "El archivo volverá a la versión elegida. La versión actual NO se pierde: queda guardada en el historial de versiones."
+    reversion: "Puedes volver a la versión actual desde el historial de versiones del archivo."
+    precondiciones: "Parámetro fijo «conservar la versión actual» = sí. El archivo se identifica solo por metadatos."
+    reversible: true
+    verificacion: "Tamaño y fecha de la versión vigente coinciden con la elegida."
+  - id: resincronizar_onedrive
+    tool_mcp: resincronizar_onedrive
+    nombre: "Resincronizar OneDrive"
+    descripcion: "Pausar y reanudar la sincronización de OneDrive."
+    riesgo: "bajo"
+    politica: "consentimiento"
+    aviso_obligatorio: "OneDrive se pausará y se reanudará; la sincronización puede tardar unos minutos."
+    reversion: "No cambia tus archivos."
+    precondiciones: "Sin conflictos de archivos."
+    reversible: true
+    verificacion: "Estado de OneDrive: sincronizado."
+  - id: asignar_licencia
+    tool_mcp: asignar_licencia_office
+    nombre: "Asignar licencia de Microsoft 365"
+    descripcion: "Asignar la licencia de Microsoft 365 al usuario en la consola de administración."
+    riesgo: "medio"
+    politica: "aprobacion_n2"
+    aviso_obligatorio: "Un técnico asignará la licencia a tu usuario. Tendrás que cerrar y volver a abrir las aplicaciones de Office."
+    reversion: "La licencia se puede retirar desde la consola de administración."
+    precondiciones: "Licencia disponible en el inventario."
+    reversible: true
+    verificacion: "La telemetría muestra la licencia asignada y la aplicación deja de marcar «sin licencia»."
+  - id: desactivar_antivirus
+    nombre: "Desactivar el antivirus"
+    descripcion: "No existe como herramienta."
+    riesgo: "alto"
+    politica: "prohibida"
+    aviso_obligatorio: "Acción prohibida."
+    reversion: "No aplica."
+    plantilla_rechazo: "No puedo desactivar el antivirus: es una acción prohibida. Sin él, tu equipo y la red quedan expuestos a programas maliciosos, y una macro sin firma es justamente una de las vías de ataque más comunes. El camino correcto es que un técnico de segundo nivel (N2) revise la macro y, si es segura, la firme o la autorice. ¿Quieres que le pase tu caso con todo lo que ya revisé?"
+    camino_correcto: "N2 evalúa la macro (firma o autorización)."
+  - id: otorgar_permisos_admin
+    nombre: "Otorgar permisos de administrador"
+    descripcion: "No existe como herramienta."
+    riesgo: "alto"
+    politica: "prohibida"
+    aviso_obligatorio: "Acción prohibida."
+    reversion: "No aplica."
+    plantilla_rechazo: "No puedo dar permisos de administrador: es una acción prohibida porque permitiría instalar o cambiar cualquier cosa en el equipo sin control. Si de verdad hace falta un permiso especial, lo evalúa N2. ¿Quieres que le pase tu caso?"
+    camino_correcto: "N2 evalúa la necesidad del permiso."
+  - id: control_remoto
+    nombre: "Tomar control remoto del equipo"
+    descripcion: "No existe como herramienta."
+    riesgo: "alto"
+    politica: "prohibida"
+    aviso_obligatorio: "Acción prohibida."
+    reversion: "No aplica."
+    plantilla_rechazo: "No puedo tomar el control de tu equipo: esa acción no existe en este sistema. Si hace falta una sesión remota, la agenda un técnico de N2. ¿Quieres que le pase tu caso?"
+    camino_correcto: "N2 agenda una sesión remota."
+  - id: leer_contenido_usuario
+    nombre: "Leer correos, archivos o chats del usuario"
+    descripcion: "No existe como herramienta."
+    riesgo: "alto"
+    politica: "prohibida"
+    aviso_obligatorio: "Acción prohibida."
+    reversion: "No aplica."
+    plantilla_rechazo: "No leo el contenido de tus correos, archivos ni chats. Si me describes el mensaje de error o me envías una captura del error, lo reviso con eso."
+    camino_correcto: "Describir el error o enviar una captura."

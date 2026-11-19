@@ -1,0 +1,19 @@
+# Plazos simulados de atención (ANS). El diseño los deja abiertos (§12.3).
+version: 1
+ans:
+  escalamiento:
+    prioridad: "P3 · media"
+    plazo: "4 horas hábiles"
+    texto: "Un técnico de segundo nivel (N2) te contactará en máximo 4 horas hábiles (plazo simulado)."
+  seguridad:
+    prioridad: "P3 · media (con bandera de seguridad)"
+    plazo: "4 horas hábiles"
+    texto: "Un técnico de N2 revisará tu caso en máximo 4 horas hábiles (plazo simulado)."
+  humano:
+    prioridad: "P3 · media (pedido por el usuario)"
+    plazo: "4 horas hábiles"
+    texto: "Una persona de soporte (N2) te contactará en máximo 4 horas hábiles (plazo simulado)."
+  aprobacion:
+    prioridad: "Aprobación N2"
+    plazo: "30 minutos hábiles"
+    texto: "Un técnico de N2 debe aprobar la acción; suele tardar hasta 30 minutos hábiles (plazo simulado)."

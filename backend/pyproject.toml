@@ -1,0 +1,50 @@
+[project]
+name = "caso5-backend"
+version = "0.1.0"
+description = "Caso 5 · Agente de diagnóstico de incidentes de ofimática (backend FastAPI)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.165.0",
+  "uvicorn[standard]==0.54.0",
+  "pydantic==2.14.4",
+  "pydantic-settings==2.16.3",
+  "httpx==0.28.1",
+  "pyyaml==6.0.3",
+  "langgraph==1.2.23",
+  "langgraph-checkpoint-postgres==3.2.1",
+  "psycopg[binary,pool]==3.3.9",
+  "langfuse==5.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.2.0",
+  "pytest-asyncio==1.5.0",
+  "respx==0.23.1",
+  "ruff==0.17.6",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = ["en_vivo: requiere modelos reales y Langfuse (no corre por defecto)"]
+addopts = "-m 'not en_vivo'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]

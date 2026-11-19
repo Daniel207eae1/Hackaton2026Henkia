@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo de validación · Caso 5</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="pagina">
+  <header>
+    <h1>Selector de escenarios</h1>
+    <p class="sub">Prototipo estático con datos 100 % sintéticos para recorrer los 12 escenarios del jurado y comprobar las invariantes antes de construir los agentes. Sin red, sin LLM, sin backend.</p>
+    <p class="sub">Cómo usarlo: abre <b>Vista usuario</b> de un escenario y pulsa «Siguiente paso ▶». Las tarjetas de consentimiento detienen el guion. Para el escenario 1, aprueba en la <b>Consola N2</b> desde esta misma pestaña y vuelve al chat.</p>
+  </header>
+
+  <section class="seccion">
+    <h2>Escenarios</h2>
+    <div id="escenarios" class="rejilla"></div>
+  </section>
+
+  <section class="seccion dos-col">
+    <div>
+      <h2>Checklist de invariantes globales <small>(se marca a mano)</small></h2>
+      <ul id="checklist" class="checklist"></ul>
+    </div>
+    <div>
+      <h2>Leyenda</h2>
+      <div id="leyenda"></div>
+    </div>
+  </section>
+
+  <section class="seccion">
+    <h2>Autoverificación de los guiones <small>(escenario × regla)</small></h2>
+    <p class="sub">Al cargar, el prototipo recorre cada guion por el camino feliz, diciendo «No» en cada tarjeta de consentimiento y pulsando «Hablar con una persona» antes de cada paso, y revisa las reglas. No sustituye la revisión del equipo: solo detecta datos del guion que rompan una invariante. Pasa el cursor sobre ⛔ para ver el detalle.</p>
+    <div id="autoverificacion" class="desplazable"></div>
+  </section>
+
+  <section class="seccion">
+    <button id="btn-limpiar" class="btn">Borrar todo el avance guardado en esta pestaña</button>
+  </section>
+</main>
+<script src="datos.js"></script>
+<script src="app.js"></script>
+<script>FV.paginaIndex();</script>
+</body>
+</html>

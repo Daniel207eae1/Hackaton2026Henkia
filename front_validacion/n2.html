@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consola N2 · Caso 5</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="pagina">
+  <header>
+    <h1>Consola N2</h1>
+    <p class="sub">Sesión simulada de <b>Técnico N2 ficticio (TEC-SIM-02)</b>. Las decisiones se guardan en el almacenamiento de sesión de esta pestaña; abre el chat del usuario en la misma pestaña para que las vea.</p>
+    <p class="sub"><a href="#aprobaciones">Aprobaciones</a> · <a href="#posibles-masivos">Posibles masivos</a> · <a href="#escalamientos">Escalamientos</a> · <a href="#propuestas">Propuestas de KB (Módulo A)</a></p>
+  </header>
+  <section class="seccion" id="aprobaciones">
+    <h2>Bandeja de aprobaciones <small>(acciones con política aprobacion_n2)</small></h2>
+    <div id="aprobaciones-lista"></div>
+  </section>
+  <section class="seccion" id="posibles-masivos">
+    <h2>Posibles masivos <small>(clúster semántico sin confirmación del tablero)</small></h2>
+    <p class="sub">Propuestas de §3.11–3.12: el sistema detectó varios usuarios con el mismo problema, pero el tablero no lo confirma. Solo N2 puede publicarlo como masivo. Mientras tanto, esos casos solo reciben pruebas de lectura.</p>
+    <div id="masivos-lista"></div>
+  </section>
+  <section class="seccion" id="escalamientos">
+    <h2>Bandeja de escalamientos</h2>
+    <p class="sub">Escenarios escalados por guion y cualquier caso que se haya escalado en la sesión actual (por ejemplo, con «Hablar con una persona»).</p>
+    <div id="escalamientos-lista"></div>
+  </section>
+  <section class="seccion" id="propuestas">
+    <h2>Propuestas de KB <small>(Módulo A · revisión humana obligatoria)</small></h2>
+    <div id="propuestas-lista"></div>
+  </section>
+</main>
+<script src="datos.js"></script>
+<script src="app.js"></script>
+<script>FV.paginaN2();</script>
+</body>
+</html>

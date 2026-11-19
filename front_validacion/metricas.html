@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Métricas · Caso 5</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="pagina">
+  <header>
+    <h1>Tablero de métricas <small>(maqueta estilo Langfuse)</small></h1>
+    <p class="sub aviso-quemado" id="nota"></p>
+  </header>
+  <section class="seccion">
+    <h2>Indicadores</h2>
+    <div id="kpis" class="kpis"></div>
+  </section>
+  <section class="seccion">
+    <h2>Costo por conversación, desglosado por agente</h2>
+    <div id="costos" class="desplazable"></div>
+  </section>
+  <section class="seccion">
+    <h2>Por escenario</h2>
+    <div id="por-escenario" class="desplazable"></div>
+  </section>
+  <p><a class="desactivado" aria-disabled="true">Abrir dashboard en Langfuse (desactivado en el prototipo)</a></p>
+</main>
+<script src="datos.js"></script>
+<script src="app.js"></script>
+<script>FV.paginaMetricas();</script>
+</body>
+</html>

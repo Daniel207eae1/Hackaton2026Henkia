@@ -1,0 +1,218 @@
+# Configuración de modelos por agente (ADR 0004, ADR 0012).
+# REGLA: ningún nombre de modelo ni de proveedor aparece en el código de los agentes; solo aquí.
+#
+# - proveedores: cómo se llega a cada API. Las credenciales se leen de variables de entorno.
+# - modelos: catálogo con las capacidades que declara cada modelo, su licencia y su precio de referencia
+#   (USD por millón de tokens) para el costo por agente en Langfuse (§5.4).
+#   Hugging Face: capacidades y precios tomados de https://router.huggingface.co/v1/models (2026-11-19,
+#   proveedor más barato en vivo; el router puede enrutar a otro proveedor). Licencias: §6 del diseño.
+#   `etiqueta`: texto del selector de modelo de la página (solo modo demo).
+# - agentes: capacidades requeridas, parámetros y cadena de fallback (en orden).
+#   Al arrancar se valida que cada modelo de la cadena declare todas las capacidades requeridas.
+#   Con el selector de la página (modo demo) el modelo elegido va PRIMERO en la cadena de cada agente
+#   que pueda usarlo (si no cumple las capacidades del agente, ese agente sigue con su cadena).
+
+version: 1
+
+proveedores:
+  huggingface:
+    tipo: openai_compatible
+    base_url: https://router.huggingface.co/v1
+    api_key_env: HF_TOKEN
+    cabeceras_env:
+      X-HF-Bill-To: HF_BILL_TO     # organización que paga (p. ej., henkia); se omite si está vacía
+    timeout_s: 90
+  openrouter:  # alternativa; hoy fuera de las cadenas por defecto
+    tipo: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    cabeceras:
+      X-Title: Caso5 Prompaton (datos sinteticos)
+    timeout_s: 60
+  ollama:
+    tipo: openai_compatible
+    base_url_env: OLLAMA_BASE_URL
+    sufijo_ruta: /v1
+    timeout_s: 120
+  fake:
+    tipo: fake
+
+modelos:
+  # ------------------------------------------------------------------ Hugging Face (por defecto)
+  hf-gpt-oss-20b:
+    proveedor: huggingface
+    id: openai/gpt-oss-20b
+    etiqueta: gpt-oss 20B (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    # Razona SIEMPRE (no se apaga): el razonamiento se descuenta de max_tokens, por eso el margen.
+    # `reasoning_effort` va por MODELO, nunca por agente: en Gemma 4 ese parámetro ACTIVA el razonamiento
+    # (verificado 2026-11-19) y se filtraría a los respaldos de la cadena.
+    parametros: {max_tokens: 4000, reasoning_effort: low}
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.018, salida_usd_1m: 0.09}
+  hf-gpt-oss-120b:
+    proveedor: huggingface
+    id: openai/gpt-oss-120b
+    etiqueta: gpt-oss 120B (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    # Esfuerzo medio: diagnóstico y curación de la KB, donde razonar sí aporta.
+    parametros: {max_tokens: 4000, reasoning_effort: medium}
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.03, salida_usd_1m: 0.187}
+  hf-gpt-oss-120b-rapido:  # mismo modelo, esfuerzo bajo (intérprete: clasificar en enums)
+    proveedor: huggingface
+    id: openai/gpt-oss-120b
+    etiqueta: gpt-oss 120B rápido (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    parametros: {max_tokens: 4000, reasoning_effort: low}
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.03, salida_usd_1m: 0.187}
+  hf-gemma4-26b:
+    proveedor: huggingface
+    id: google/gemma-4-26B-A4B-it
+    etiqueta: Gemma 4 26B MoE (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada, vision]
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.06, salida_usd_1m: 0.33}
+  hf-gemma4-31b:
+    proveedor: huggingface
+    id: google/gemma-4-31B-it
+    etiqueta: Gemma 4 31B (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada, vision]
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.10, salida_usd_1m: 0.34}
+  hf-qwen3-30b:
+    proveedor: huggingface
+    id: Qwen/Qwen3-30B-A3B-Instruct-2507
+    etiqueta: Qwen3 30B Instruct (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.09, salida_usd_1m: 0.30}
+  hf-nemotron-lightning:
+    proveedor: huggingface
+    id: nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16
+    etiqueta: Nemotron 3.5 Lightning (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    # Razona por defecto; en HF se apaga igual que en OpenRouter (verificado 2026-11-19).
+    parametros: {max_tokens: 2000, reasoning: {enabled: false}}
+    licencia: OpenMDW-1.1
+    precio_referencia: {entrada_usd_1m: 0.05, salida_usd_1m: 0.20}
+  hf-nemotron-super-vl:
+    proveedor: huggingface
+    id: nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16
+    etiqueta: Nemotron 3.5 Super VL (HF)
+    capacidades: [chat, streaming, tools, salida_estructurada, vision]
+    parametros: {max_tokens: 2000, reasoning: {enabled: false}}
+    licencia: OpenMDW-1.1
+    precio_referencia: {entrada_usd_1m: 0.10, salida_usd_1m: 0.40}
+
+  # ------------------------------------------------------------------ OpenRouter (alternativa, :free)
+  or-gemma4-26b:
+    proveedor: openrouter
+    id: google/gemma-4-26b-a4b-it:free
+    etiqueta: Gemma 4 26B (OpenRouter :free)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.06, salida_usd_1m: 0.33}
+  or-nemotron-lightning:
+    proveedor: openrouter
+    id: nvidia/nemotron-3.5-lightning:free
+    etiqueta: Nemotron 3.5 Lightning (OpenRouter :free)
+    capacidades: [chat, streaming, tools]  # sin response_format (verificado 2026-11-19)
+    # Razona por defecto y agota max_tokens sin responder (verificado 2026-11-19).
+    parametros: {reasoning: {enabled: false}}
+    licencia: OpenMDW-1.1
+    precio_referencia: {entrada_usd_1m: 0.05, salida_usd_1m: 0.20}
+  or-nemotron-super-vl:
+    proveedor: openrouter
+    id: nvidia/nemotron-3.5-super-vl:free
+    etiqueta: Nemotron 3.5 Super VL (OpenRouter :free)
+    capacidades: [chat, streaming, salida_estructurada, vision]
+    parametros: {reasoning: {enabled: false}}
+    licencia: OpenMDW-1.1
+    precio_referencia: {entrada_usd_1m: 0.10, salida_usd_1m: 0.40}
+
+  # ------------------------------------------------------------------ Local (Ollama)
+  qwen35-4b-local:
+    proveedor: ollama
+    id: qwen3.5:4b
+    etiqueta: Qwen3.5 4B (local, Ollama)
+    capacidades: [chat, streaming, tools, salida_estructurada]
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.0, salida_usd_1m: 0.0}
+  qwen3-embedding-local:
+    proveedor: ollama
+    id_env: EMBEDDING_MODEL          # si la variable no está, usa `id`
+    id: qwen3-embedding:0.6b
+    dimension_env: EMBEDDING_DIM
+    capacidades: [embeddings]
+    licencia: Apache-2.0
+    precio_referencia: {entrada_usd_1m: 0.0, salida_usd_1m: 0.0}
+
+  # ------------------------------------------------------------------ Dobles (pruebas)
+  fake-chat:
+    proveedor: fake
+    id: fake-chat
+    capacidades: [chat, streaming, tools, salida_estructurada, vision]
+    precio_referencia: {entrada_usd_1m: 0.0, salida_usd_1m: 0.0}
+  fake-embeddings:
+    proveedor: fake
+    id: fake-embeddings
+    capacidades: [embeddings]
+    precio_referencia: {entrada_usd_1m: 0.0, salida_usd_1m: 0.0}
+
+agentes:
+  conversacional:
+    requiere: [chat, streaming]
+    parametros: {temperature: 0.4, max_tokens: 1000}
+    cadena: [hf-gpt-oss-20b, hf-gemma4-26b, hf-qwen3-30b, qwen35-4b-local]
+  contexto:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.0, max_tokens: 500}
+    cadena: [hf-gpt-oss-20b, hf-qwen3-30b, qwen35-4b-local]
+  diagnosticador:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.1, max_tokens: 1500}
+    cadena: [hf-gpt-oss-120b, hf-gemma4-31b, hf-qwen3-30b, qwen35-4b-local]
+  interprete:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.0, max_tokens: 500}
+    cadena: [hf-gpt-oss-120b-rapido, hf-qwen3-30b, hf-gemma4-26b, qwen35-4b-local]
+  extractor:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.0, max_tokens: 400}
+    cadena: [hf-qwen3-30b, hf-gpt-oss-20b, qwen35-4b-local]  # local primero cuando se descargue qwen3.5:4b
+  vision:
+    requiere: [chat, vision, salida_estructurada]
+    parametros: {temperature: 0.0, max_tokens: 400}
+    cadena: [hf-nemotron-super-vl, hf-gemma4-31b]
+  documentacion:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.2, max_tokens: 1200}
+    cadena: [hf-gpt-oss-20b, hf-qwen3-30b, qwen35-4b-local]
+  guardia:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.0, max_tokens: 200}
+    cadena: [qwen35-4b-local, hf-gpt-oss-20b]
+  curador_kb:
+    requiere: [chat, salida_estructurada]
+    parametros: {temperature: 0.2, max_tokens: 2000}
+    cadena: [hf-gpt-oss-120b, hf-gemma4-31b]
+  juez:  # otra familia distinta a la de los agentes evaluados (§6)
+    requiere: [chat]
+    parametros: {temperature: 0.0, max_tokens: 800}
+    cadena: [hf-nemotron-super-vl, hf-gemma4-31b]
+  embeddings:  # Ollama: mismo modelo y misma numérica que los vectores de P2 (ADR 0011)
+    requiere: [embeddings]
+    parametros: {}
+    cadena: [qwen3-embedding-local]
+
+# Con LLM_MODO=fake todos los agentes usan estos modelos (pruebas y demo sin claves).
+modo_fake:
+  chat: fake-chat
+  embeddings: fake-embeddings
+
+resiliencia:
+  reintentos_por_modelo: 1
+  backoff_base_s: 1.0
+  backoff_max_s: 20.0

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vista del colaborador · Caso 5</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="pagina">
+  <header id="cabecera"></header>
+  <div id="grafo"></div>
+  <div id="aviso-escenario"></div>
+  <div id="principal" class="usuario-layout">
+    <section class="col-chat">
+      <div id="chat" class="chat" aria-live="polite"></div>
+      <div class="controles">
+        <button id="btn-sig" class="btn primario">Siguiente paso ▶</button>
+        <button id="btn-reiniciar" class="btn">Reiniciar</button>
+        <span id="estado-guion" class="estado-guion"></span>
+      </div>
+    </section>
+    <aside class="col-lateral">
+      <h2>Lo que estoy revisando</h2>
+      <ul id="panel-revisando" class="panel-revisando"></ul>
+      <div id="panel-capturas"></div>
+      <div id="panel-proto" class="panel-proto"></div>
+    </aside>
+  </div>
+</main>
+<button id="btn-humano" class="btn btn-humano">Hablar con una persona</button>
+<script src="datos.js"></script>
+<script src="app.js"></script>
+<script>FV.paginaUsuario();</script>
+</body>
+</html>

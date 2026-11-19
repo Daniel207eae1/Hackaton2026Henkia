@@ -1,0 +1,117 @@
+# Caso 5 · compose principal (P1). Langfuse (localhost:3000) y Ollama ya existen fuera del compose.
+# BD de la app (P2): docker compose -f docker-compose.yml -f docker-compose.db.yml up
+# Zabbix:            docker compose --profile zabbix up
+name: caso5
+
+services:
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Dentro del contenedor, "localhost" no es tu equipo: Langfuse se alcanza por host.docker.internal.
+      LANGFUSE_HOST: ${LANGFUSE_HOST_CONTENEDOR:-http://host.docker.internal:3000}
+      LANGFUSE_URL_PUBLICA: ${LANGFUSE_HOST:-http://localhost:3000}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_CONTENEDOR:-http://ollama:11434}
+      ORIGENES_CORS: http://localhost:5173
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/config:/app/config:ro
+      - ./backend/scripts:/app/scripts:ro
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      - db-tunel
+      - ollama
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/salud')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: ./frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_POLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Túnel TCP hacia la BD PostgreSQL de P2 (corre en otra máquina). El hostname es un túnel temporal
+  # de Cloudflare: va en DB_TUNEL_HOST (.env). Solo es accesible dentro de la red de Docker; para DBeaver
+  # usa el script del anfitrión (conectar_bd_hackathon.bat → 127.0.0.1:15432).
+  db-tunel:
+    image: cloudflare/cloudflared:2026.11.1
+    command: ["access", "tcp", "--hostname", "${DB_TUNEL_HOST:-sin-configurar.invalid}", "--url", "0.0.0.0:15432"]
+    restart: unless-stopped
+
+  # Ollama local (CPU): embeddings con el MISMO modelo que usó P2 (qwen3-embedding:0.6b, 1024 dim).
+  # Solo en la red de Docker. Modelos en el volumen "ollama-modelos" (persisten entre reinicios).
+  ollama:
+    image: ollama/ollama:0.40.16
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+    volumes:
+      - ollama-modelos:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  equipos-sim:
+    build: ./infra/zabbix/equipos-sim
+    ports:
+      - "8090:8090"
+
+  # ---------- Zabbix 7.0 LTS con su propia BD (perfil "zabbix", ADR 0005) ----------
+  zabbix-db:
+    profiles: ["zabbix"]
+    image: postgres:16.16
+    environment:
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-zabbix_solo_local}
+      POSTGRES_DB: zabbix
+    volumes:
+      - zabbix-db:/var/lib/postgresql/data
+
+  zabbix-server:
+    profiles: ["zabbix"]
+    image: zabbix/zabbix-server-pgsql:ubuntu-7.0.32
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-zabbix_solo_local}
+      POSTGRES_DB: zabbix
+      ZBX_ENABLEGLOBALSCRIPTS: "0"
+    ports:
+      - "10051:10051"
+    depends_on: [zabbix-db]
+
+  zabbix-web:
+    profiles: ["zabbix"]
+    image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.0.32
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-zabbix_solo_local}
+      POSTGRES_DB: zabbix
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: America/Bogota
+    ports:
+      - "8080:8080"
+    depends_on: [zabbix-server]
+
+volumes:
+  zabbix-db:
+  ollama-modelos:
