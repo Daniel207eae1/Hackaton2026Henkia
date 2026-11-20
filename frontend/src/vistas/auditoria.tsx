@@ -1,9 +1,11 @@
+import { History, Search } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
+import { DetalleCaso } from "@/components/caso/detalle-caso";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { EncabezadoVista, EstadoVacio } from "@/components/vista";
 import { pedir, type Persona } from "@/lib/api";
 
 interface EstadoCaso {
@@ -31,44 +33,38 @@ export function Auditoria({ persona }: { persona: Persona }) {
   };
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Auditoría del caso</h1>
-      <form onSubmit={buscar} className="flex max-w-xl gap-2">
+    <div className="space-y-5">
+      <EncabezadoVista
+        titulo="Auditoría del caso"
+        icono={History}
+        descripcion="Todo lo que pasó en el caso: diagnóstico, hipótesis, acciones con su autorización, conversación y línea de tiempo."
+      />
+      <form onSubmit={buscar} className="flex max-w-xl gap-2" role="search">
         <label htmlFor="case-id" className="sr-only">
           Id del caso
         </label>
-        <Input id="case-id" value={caseId} onChange={(e) => setCaseId(e.target.value)} placeholder="Id del caso" />
-        <Button type="submit" disabled={!caseId.trim()}>
-          Buscar
+        <Input
+          id="case-id"
+          value={caseId}
+          onChange={(e) => setCaseId(e.target.value)}
+          placeholder="Id del caso"
+          className="h-9 bg-card font-mono"
+        />
+        <Button type="submit" size="lg" disabled={!caseId.trim()}>
+          <Search aria-hidden /> Buscar
         </Button>
       </form>
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="bg-danger-soft">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {caso && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {caso.case_id} · etapa {caso.etapa ?? "—"} · {caso.turnos} turnos
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <ol className="space-y-1 text-sm">
-              {(caso.estado.linea_tiempo ?? []).map((h, i) => (
-                <li key={i}>
-                  <time className="text-muted-foreground">{h.hora}</time> · <strong>{h.etapa}</strong> · {h.detalle}
-                </li>
-              ))}
-            </ol>
-            <details>
-              <summary className="cursor-pointer text-sm">Estado completo (JSON)</summary>
-              <pre className="mt-2 max-h-96 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(caso.estado, null, 2)}</pre>
-            </details>
-          </CardContent>
-        </Card>
+      {!caso && !error && (
+        <EstadoVacio icono={Search} titulo="Busca un caso por su id.">
+          El id aparece en el panel lateral del chat («Caso: …»).
+        </EstadoVacio>
       )}
+      {caso && <DetalleCaso caseId={caso.case_id} estado={caso.estado} />}
     </div>
   );
 }

@@ -76,12 +76,13 @@ def test_no_funciono_descarta_la_hipotesis_y_sigue_con_la_siguiente(
     case_id = uuid.uuid4().hex
     _ejecutar_accion(cliente, fake, "reiniciar_cola_impresion", case_id, "la impresora no imprime")
     fake.programar_estructurado(interpretacion(aplicacion="impresora", tipo_sintoma="impresion"))
-    fake.programar("¿La impresora que usas aparece como predeterminada?")
     p2 = _partes(_chat(cliente, "No, sigue igual", case_id))
-    assert "Hipotesis" in _etapas(p2) and "Escalar" not in _etapas(p2)
+    # No vuelve a preguntar: pasa directo a la siguiente causa más probable (guía), sin escalar.
+    assert _etapas(p2)[-2:] == ["Hipotesis", "Guia"]
+    assert "causa más frecuente" in _textos(p2) and "KB-SIM-024" in _textos(p2)
     estados = {h["articulo_id"]: (h["estado"], h["justificacion"]) for h in _estado(cliente, case_id)["hipotesis"]}
     assert estados["KB-SIM-023"] == ("descartada", "La solución no funcionó según el usuario")
-    assert estados["KB-SIM-024"][0] == "pendiente"
+    assert _estado(cliente, case_id)["esperando_confirmacion"]["articulo_id"] == "KB-SIM-024"
 
 
 def test_no_funciono_sin_diagnostico_escala(cliente: TestClient, fake: AdaptadorFake, mcp: MCPFalso):

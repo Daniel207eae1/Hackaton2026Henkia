@@ -26,14 +26,14 @@ export function Valoracion({ caseId, verComo }: { caseId: string; verComo: strin
 
   if (estado === "enviada")
     return (
-      <p role="status" className="text-sm text-muted-foreground">
+      <p role="status" className="text-sm font-medium text-success-foreground">
         ¡Gracias por tu valoración!
       </p>
     );
   return (
-    <section aria-label="Valora la atención" className="max-w-xl space-y-2 rounded-lg border p-3 text-sm">
+    <section aria-label="Valora la atención" className="max-w-xl space-y-2 rounded-xl border bg-muted/40 p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span>¿Te sirvió la atención?</span>
+        <span className="font-medium">¿Te sirvió la atención?</span>
         <Button size="sm" variant={util === true ? "default" : "outline"} onClick={() => setUtil(true)} aria-pressed={util === true}>
           <ThumbsUp aria-hidden /> Sí
         </Button>
@@ -50,7 +50,7 @@ export function Valoracion({ caseId, verComo }: { caseId: string; verComo: strin
             id={`comentario-${caseId}`}
             rows={2}
             maxLength={500}
-            className="w-full rounded-md border bg-background p-2"
+            className="campo"
             value={comentario}
             onChange={(e) => setComentario(e.currentTarget.value)}
           />

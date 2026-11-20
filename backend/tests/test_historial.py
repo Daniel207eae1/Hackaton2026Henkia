@@ -74,6 +74,17 @@ def test_confirmacion_con_frases_reales_de_la_evaluacion():
     assert r("no") == "no" and r("No, sigue igual") == "no" and r("todavía no me sincroniza") == "no"
     assert r("sí, pero sigue fallando") == "ambigua"
     assert r("¿qué hago con el archivo?") == "ambigua"
+    # Frases de la prueba de «el chat olvida»: también son «no funcionó».
+    assert r("Ya lo intenté y nada") == "no" and r("No me funcionó") == "no" and r("no sirvió") == "no"
+
+
+def test_pasos_de_un_articulo_del_curador_sin_doble_numeracion_ni_markdown():
+    from app.orquestador.nodos_diagnostico import pasos_para_usuario
+
+    kb = "1. 1. Cerrar Microsoft Teams.\n2. 2. Abrir el **Administrador de credenciales**:\n3. • Presionar **Win + R**."
+    assert pasos_para_usuario(kb) == (
+        "1. Cerrar Microsoft Teams.\n2. Abrir el Administrador de credenciales:\n3. Presionar Win + R."
+    )
 
 
 def test_pasos_del_agente_no_llegan_al_usuario():

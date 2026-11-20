@@ -227,3 +227,55 @@ def test_no_concluyente_pregunta_antes_de_escalar(cliente: TestClient, fake, mcp
     fake.programar("¿Tu impresora aparece como predeterminada?")
     partes = _partes(_chat(cliente, "la impresora no imprime"))
     assert _etapas(partes)[-1] == "Aclaracion"  # primero pregunta lo que solo el usuario sabe
+
+
+# ---------------------------------------------------------------- «el chat olvida» (bucle de aclaración)
+def _no_concluyente() -> str:
+    return json_fake(
+        {
+            "evaluaciones": [
+                {
+                    "articulo_id": "KB-SIM-024",
+                    "estado": "no_concluyente",
+                    "evidencias": ["cola_trabajos"],
+                    "justificacion": "Falta saber la predeterminada",
+                }
+            ]
+        }
+    )
+
+
+def test_sin_avance_tras_responder_prueba_la_mas_probable_en_vez_de_repreguntar(
+    cliente: TestClient, fake, mcp: MCPFalso
+):
+    """Caso real: el usuario responde y nada cambia → no se vuelve a preguntar; se prueba la causa más probable."""
+    case_id = uuid.uuid4().hex
+    fake.programar_estructurado(interpretacion(aplicacion="impresora", tipo_sintoma="impresion"), _no_concluyente())
+    fake.programar("¿Tu impresora aparece como predeterminada?")
+    assert _etapas(_partes(_chat(cliente, "la impresora no imprime", case_id)))[-1] == "Aclaracion"
+    fake.programar_estructurado(interpretacion(aplicacion="impresora", tipo_sintoma="impresion"), _no_concluyente())
+    fake.programar("¿Tu impresora aparece como predeterminada en la configuración?")  # la misma pregunta otra vez
+    p2 = _partes(_chat(cliente, "no sé, simplemente no imprime", case_id))
+    assert "Aclaracion" not in _etapas(p2)
+    d = _estado(cliente, case_id)["diagnostico"]
+    assert d["probable"] is True and d["confirmada"] in ("KB-SIM-023", "KB-SIM-024")
+
+
+def test_la_compuerta_bloquea_la_misma_pregunta_con_otras_palabras():
+    from app.seguridad.compuerta_preguntas import FiltroPreguntas, es_repetida, preguntas_de
+
+    # Las preguntas del caso real 8fd74ac4 (Outlook «no carga»).
+    previas = preguntas_de(
+        "¿Qué ves en la pantalla cuando intentas abrir Outlook? ¿Hay algún mensaje de error, una pantalla de "
+        "carga, o simplemente no responde?"
+    )
+    repetida = (
+        "¿Al abrir Outlook aparece alguna ventana de carga, un mensaje de error o simplemente no responde y se "
+        "queda en blanco?"
+    )
+    assert es_repetida(repetida, previas)
+    assert not es_repetida("¿Desde cuándo te pasa?", previas)
+    assert not es_repetida("¿Te pasa también con el Outlook en el navegador?", previas)
+    f = FiltroPreguntas(set(), previas=previas)
+    salida = f.alimentar("Entiendo. " + repetida + " ")
+    assert "".join(salida + f.cerrar()).strip() == "Entiendo." and f.repetidas == 1

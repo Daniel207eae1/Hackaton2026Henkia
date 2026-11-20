@@ -40,9 +40,15 @@ export function TituloSeccion({ id, children, cuenta }: { id?: string; children:
     <h2 id={id} className="flex items-center gap-2 text-base font-semibold">
       {children}
       {cuenta !== undefined && cuenta !== null && (
-        <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground tabular-nums">
-          {cuenta}
-        </span>
+        <>
+          <span
+            aria-hidden
+            className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground tabular-nums"
+          >
+            {cuenta}
+          </span>
+          <span className="sr-only"> ({cuenta})</span>
+        </>
       )}
     </h2>
   );

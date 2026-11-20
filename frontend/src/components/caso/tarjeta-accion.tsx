@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, Monitor, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Monitor, ShieldAlert, ShieldCheck, Wrench, XCircle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -9,22 +9,22 @@ import { cn } from "@/lib/utils";
 
 const ESTADO: Record<EstadoAccion, { texto: string; clase: string; icono: typeof Clock }> = {
   propuesta: { texto: "Propuesta", clase: "bg-muted text-foreground", icono: Clock },
-  esperando_n2: { texto: "Esperando aprobación de N2", clase: "bg-amber-100 text-amber-900", icono: Clock },
-  aprobada_n2: { texto: "Aprobada por N2", clase: "bg-sky-100 text-sky-900", icono: ShieldCheck },
-  esperando_consentimiento: { texto: "Esperando tu autorización", clase: "bg-amber-100 text-amber-900", icono: Monitor },
-  autorizada: { texto: "Autorizada por ti", clase: "bg-sky-100 text-sky-900", icono: ShieldCheck },
-  ejecutando: { texto: "Ejecutando", clase: "bg-sky-100 text-sky-900", icono: Clock },
-  ejecutada: { texto: "Ejecutada", clase: "bg-emerald-100 text-emerald-900", icono: CheckCircle2 },
+  esperando_n2: { texto: "Esperando aprobación de N2", clase: "bg-warning-soft text-warning-foreground", icono: Clock },
+  aprobada_n2: { texto: "Aprobada por N2", clase: "bg-info-soft text-info-foreground", icono: ShieldCheck },
+  esperando_consentimiento: { texto: "Esperando tu autorización", clase: "bg-warning-soft text-warning-foreground", icono: Monitor },
+  autorizada: { texto: "Autorizada por ti", clase: "bg-info-soft text-info-foreground", icono: ShieldCheck },
+  ejecutando: { texto: "Ejecutando", clase: "bg-info-soft text-info-foreground", icono: Clock },
+  ejecutada: { texto: "Ejecutada", clase: "bg-success-soft text-success-foreground", icono: CheckCircle2 },
   rechazada: { texto: "Rechazada por ti", clase: "bg-muted text-foreground", icono: XCircle },
   rechazada_n2: { texto: "N2 no la aprobó", clase: "bg-muted text-foreground", icono: XCircle },
   expirada: { texto: "Solicitud vencida", clase: "bg-muted text-foreground", icono: XCircle },
-  fallida: { texto: "No se pudo completar", clase: "bg-red-100 text-red-900", icono: ShieldAlert },
+  fallida: { texto: "No se pudo completar", clase: "bg-danger-soft text-destructive", icono: ShieldAlert },
 };
 
 const RIESGO: Record<string, string> = {
-  bajo: "border-emerald-700 text-emerald-800",
-  medio: "border-amber-700 text-amber-800",
-  alto: "border-red-700 text-red-800",
+  bajo: "border-success/40 bg-success-soft text-success-foreground",
+  medio: "border-warning/50 bg-warning-soft text-warning-foreground",
+  alto: "border-destructive/40 bg-danger-soft text-destructive",
 };
 
 interface Props {
@@ -46,31 +46,45 @@ export function TarjetaAccion({ accion, onRevisar, onConfirmar, ocupado }: Props
   const esperando = accion.estado === "esperando_consentimiento" || accion.estado === "esperando_n2";
 
   return (
-    <Card className="w-full max-w-xl" role="region" aria-label={`Acción propuesta: ${accion.nombre}`}>
+    <Card
+      className={cn(
+        "w-full max-w-xl border-l-4 shadow-sm",
+        accion.estado === "ejecutada" ? "border-l-success" : esperando ? "border-l-warning" : "border-l-primary",
+      )}
+      role="region"
+      aria-label={`Acción propuesta: ${accion.nombre}`}
+    >
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-base">{accion.nombre}</CardTitle>
+          <span className="grid size-8 place-items-center rounded-lg bg-accent text-accent-foreground" aria-hidden>
+            <Wrench className="size-4" />
+          </span>
+          <CardTitle className="text-base font-semibold">{accion.nombre}</CardTitle>
           <Badge variant="outline" className={RIESGO[accion.riesgo] ?? ""}>
             Riesgo {accion.riesgo}
           </Badge>
-          {accion.politica === "aprobacion_n2" && <Badge variant="outline">Requiere N2</Badge>}
+          {accion.politica === "aprobacion_n2" && (
+            <Badge variant="outline" className="border-info/40 bg-info-soft text-info-foreground">
+              Requiere N2
+            </Badge>
+          )}
         </div>
         <CardDescription>{accion.descripcion}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <dl className="grid gap-2">
-          <div>
-            <dt className="font-medium">Qué efecto tiene</dt>
-            <dd>{accion.aviso}</dd>
+        <dl className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg bg-muted/50 p-2.5">
+            <dt className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Qué efecto tiene</dt>
+            <dd className="mt-0.5">{accion.aviso}</dd>
           </div>
-          <div>
-            <dt className="font-medium">Cómo se revierte</dt>
-            <dd>{accion.reversion}</dd>
+          <div className="rounded-lg bg-muted/50 p-2.5">
+            <dt className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Cómo se revierte</dt>
+            <dd className="mt-0.5">{accion.reversion}</dd>
           </div>
         </dl>
         {accion.estado === "esperando_consentimiento" && (
-          <Alert>
-            <Monitor aria-hidden />
+          <Alert className="border-warning/50 bg-warning-soft text-foreground">
+            <Monitor aria-hidden className="text-warning-foreground" />
             <AlertTitle>Autoriza en tu equipo</AlertTitle>
             <AlertDescription>
               Te apareció una ventana «Soporte TI – Solicitud de autorización». Pulsa «Autorizar» si estás de acuerdo o
@@ -79,8 +93,8 @@ export function TarjetaAccion({ accion, onRevisar, onConfirmar, ocupado }: Props
           </Alert>
         )}
       </CardContent>
-      <CardFooter className="flex flex-wrap items-center justify-between gap-2">
-        <p role="status" aria-live="polite" className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs", estado.clase)}>
+      <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/30 py-3">
+        <p role="status" aria-live="polite" className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium", estado.clase)}>
           <Icono className="size-3" aria-hidden /> {estado.texto}
           {accion.mensaje && <span className="sr-only">: {accion.mensaje}</span>}
         </p>

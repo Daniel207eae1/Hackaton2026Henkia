@@ -72,6 +72,8 @@ class RepositorioITSM(Protocol):
 
     async def cargar_estado(self, case_id: str) -> dict[str, Any] | None: ...
 
+    async def listar_casos(self, limite: int = 100) -> list[dict[str, Any]]: ...
+
 
 class RepositorioITSMMemoria:
     """Doble en memoria (pruebas y ejecución sin BD)."""
@@ -133,7 +135,46 @@ class RepositorioITSMMemoria:
             "escalamientos_evaluados": sum(
                 1 for e in self.escalamientos.values() if e["completo_sin_repregunta"] is not None
             ),
+            "por_dia": [],
+            "por_aplicacion": {
+                app: sum(
+                    1
+                    for c in self.casos.values()
+                    if ((c["estado_caso"].get("sintoma") or {}).get("aplicacion") or "sin identificar") == app
+                )
+                for app in {
+                    (c["estado_caso"].get("sintoma") or {}).get("aplicacion") or "sin identificar"
+                    for c in self.casos.values()
+                }
+            },
         }
+
+    async def listar_casos(self, limite: int = 100) -> list[dict[str, Any]]:
+        salida = []
+        for case_id, c in list(self.casos.items())[-limite:][::-1]:
+            e = c["estado_caso"]
+            d = e.get("diagnostico") or {}
+            sintoma = e.get("sintoma") or {}
+            salida.append(
+                {
+                    "case_id": case_id,
+                    "codigo": None,
+                    "usuario_id": e.get("persona_id"),
+                    "estado": c["estado"],
+                    "resultado": c["resultado"],
+                    "creado_en": ((e.get("linea_tiempo") or [{}])[0]).get("hora"),
+                    "actualizado_en": ((e.get("linea_tiempo") or [{}])[-1]).get("hora"),
+                    "aplicacion": sintoma.get("aplicacion"),
+                    "tipo_sintoma": sintoma.get("tipo_sintoma"),
+                    "categoria": d.get("categoria"),
+                    "confirmada": d.get("confirmada"),
+                    "probable": d.get("probable"),
+                    "etapa": e.get("etapa"),
+                    "turnos": e.get("turnos"),
+                    "masivo": (e.get("masivo") or {}).get("estado"),
+                }
+            )
+        return salida
 
     async def listar_escalamientos(self) -> list[dict[str, Any]]:
         return sorted(self.escalamientos.values(), key=lambda e: e["id"], reverse=True)

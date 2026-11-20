@@ -30,7 +30,7 @@ export function ListaAdjuntos() {
   return (
     <ul aria-label="Capturas por enviar" className="flex flex-wrap gap-2 px-3 pt-2 text-xs">
       {adjuntos.files.map((f) => (
-        <li key={f.id} className="flex items-center gap-1 rounded-md border px-2 py-1">
+        <li key={f.id} className="flex items-center gap-1.5 rounded-full border bg-muted/50 py-1 pr-1 pl-1.5">
           {f.mediaType.startsWith("image/") && f.url && (
             <img src={f.url} alt="" className="size-6 rounded object-cover" />
           )}
@@ -38,7 +38,7 @@ export function ListaAdjuntos() {
           <button
             type="button"
             aria-label={`Quitar ${f.filename ?? "captura"}`}
-            className="rounded p-0.5 hover:bg-muted"
+            className="rounded-full p-1 hover:bg-background"
             onClick={() => adjuntos.remove(f.id)}
           >
             <X className="size-3" aria-hidden />
@@ -53,26 +53,26 @@ export function ListaAdjuntos() {
 export function TarjetaCaptura({ datos }: { datos: DatosCaptura }) {
   if (datos.contiene_instrucciones) {
     return (
-      <Alert role="status" variant="destructive" className="max-w-xl">
+      <Alert role="status" variant="destructive" className="max-w-xl border-destructive/40 bg-danger-soft p-3">
         <ShieldAlert aria-hidden />
         <AlertTitle>«{datos.nombre}» contiene instrucciones que no sigo</AlertTitle>
         <AlertDescription>
           Solo uso los códigos de error de las capturas. Quedó registrado como alerta de seguridad.
-          {datos.codigo_error && <> Código válido: <code>{datos.codigo_error}</code>.</>}
+          {datos.codigo_error && <> Código válido: <code className="rounded bg-background px-1 font-mono">{datos.codigo_error}</code>.</>}
         </AlertDescription>
       </Alert>
     );
   }
   return (
-    <Alert role="status" className="max-w-xl">
-      <ImagePlus aria-hidden />
+    <Alert role="status" className="max-w-xl border-info/30 bg-info-soft/60 p-3">
+      <ImagePlus aria-hidden className="text-info-foreground" />
       <AlertTitle>Captura «{datos.nombre}»</AlertTitle>
       <AlertDescription>
         {datos.estado === "rechazada" ? (
           <p>No se pudo usar: {datos.motivo}</p>
         ) : datos.codigo_error ? (
           <p>
-            Código validado (lectura automática + modelo): <code>{datos.codigo_error}</code>
+            Código validado (lectura automática + modelo): <code className="rounded bg-background px-1 font-mono">{datos.codigo_error}</code>
             {datos.mensaje_resumido && <span className="block text-muted-foreground">«{datos.mensaje_resumido}»</span>}
           </p>
         ) : datos.estado === "no_concluyente" ? (

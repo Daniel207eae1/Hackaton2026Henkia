@@ -64,13 +64,13 @@ export function SelectorModelo({ valor, onCambio }: { valor: string; onCambio: (
   };
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
       <Cpu className="size-4 text-muted-foreground" aria-hidden />
       <label htmlFor="selector-modelo" className="sr-only">
         Modelo de IA (pruebas)
       </label>
       <Select value={valor || AUTOMATICO} onValueChange={elegir}>
-        <SelectTrigger id="selector-modelo" size="sm" className="w-56" title="Modelo de IA (solo pruebas)">
+        <SelectTrigger id="selector-modelo" size="sm" className="w-full min-w-0 sm:w-56" title="Modelo de IA (solo pruebas)">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

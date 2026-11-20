@@ -1,10 +1,11 @@
-import { Play, RefreshCw } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, FileText, Play, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Cargando, EncabezadoVista, EstadoVacio, TituloSeccion } from "@/components/vista";
 import { pedir, type Persona } from "@/lib/api";
 
 export interface PropuestaKB {
@@ -53,31 +54,33 @@ export function TarjetaPropuesta({
   const [comentario, setComentario] = useState("");
   const id = `comentario-${p.id}`;
   return (
-    <Card>
+    <Card className={p.estado === "pendiente" ? "border-l-4 border-l-primary shadow-sm" : "shadow-sm"}>
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{TIPO[p.tipo]}</Badge>
+          <Badge variant="outline" className="border-info/40 bg-info-soft text-info-foreground">{TIPO[p.tipo]}</Badge>
           {p.articulo_id && <Badge variant="secondary">{p.articulo_id}</Badge>}
           <Badge variant={p.estado === "pendiente" ? "default" : "secondary"}>{ESTADO[p.estado]}</Badge>
           <span className="text-xs text-muted-foreground">{p.categoria_id}</span>
         </div>
-        <CardTitle className="text-base">{p.titulo}</CardTitle>
+        <CardTitle className="text-base font-semibold">{p.titulo}</CardTitle>
         <CardDescription>{motivo(p.justificacion)}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div>
-          <h3 className="font-medium">Casos que lo respaldan ({p.casos_soporte.length})</h3>
-          <p className="font-mono text-xs">{p.casos_soporte.join(", ")}</p>
+          <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Casos que lo respaldan ({p.casos_soporte.length})</h3>
+          <p className="mt-1 font-mono text-xs">{p.casos_soporte.join(", ")}</p>
         </div>
         <div>
-          <h3 className="font-medium">Borrador</h3>
+          <h3 className="flex items-center gap-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            <FileText className="size-3.5" aria-hidden /> Borrador
+          </h3>
           {/* Texto plano escapado: el borrador lo escribió un LLM a partir de tickets (nunca se renderiza HTML). */}
-          <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-sans text-sm">
+          <pre className="mt-1 max-h-72 overflow-auto rounded-lg border bg-muted/40 p-3 font-sans text-sm leading-relaxed whitespace-pre-wrap">
             {p.borrador_md}
           </pre>
         </div>
         {p.comentario_revision && (
-          <p>
+          <p className="rounded-lg border border-warning/40 bg-warning-soft p-2.5">
             <span className="font-medium">Comentario de revisión:</span> {p.comentario_revision}
           </p>
         )}
@@ -90,7 +93,7 @@ export function TarjetaPropuesta({
               id={id}
               rows={2}
               maxLength={1000}
-              className="w-full rounded-md border bg-background p-2"
+              className="campo"
               value={comentario}
               onChange={(e) => setComentario(e.currentTarget.value)}
             />
@@ -98,14 +101,14 @@ export function TarjetaPropuesta({
         )}
       </CardContent>
       {p.estado === "aprobada" && (
-        <CardFooter>
+        <CardFooter className="border-t bg-muted/30 py-3">
           <Button size="sm" onClick={() => void onAccion(`/api/kb/propuestas/${p.id}/publicar`)}>
             Reintentar publicación
           </Button>
         </CardFooter>
       )}
       {p.estado === "pendiente" && (
-        <CardFooter className="flex flex-wrap gap-2">
+        <CardFooter className="flex flex-wrap gap-2 border-t bg-muted/30 py-3">
           <Button size="sm" onClick={() => void onAccion(`/api/kb/propuestas/${p.id}/publicar`)}>
             Publicar
           </Button>
@@ -180,38 +183,49 @@ export function RevisorKB({ persona }: { persona: Persona }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Revisor de KB</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void lote()} disabled={corriendo}>
-            <Play aria-hidden /> {corriendo ? "Ejecutando lote…" : "Ejecutar lote ahora"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={cargar}>
-            <RefreshCw aria-hidden /> Actualizar
-          </Button>
-        </div>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        El curador agrupa casos resueltos del historial: propone artículos que faltan y correcciones de artículos
-        desactualizados. Nada se publica sin tu revisión; devolver exige un comentario.
-      </p>
+      <EncabezadoVista
+        titulo="Revisor de KB"
+        icono={BookOpenCheck}
+        descripcion="El curador agrupa casos resueltos del historial: propone artículos que faltan y correcciones de artículos desactualizados. Nada se publica sin tu revisión; devolver exige un comentario."
+        acciones={
+          <>
+            <Button size="sm" onClick={() => void lote()} disabled={corriendo}>
+              <Play aria-hidden /> {corriendo ? "Ejecutando lote…" : "Ejecutar lote ahora"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={cargar}>
+              <RefreshCw aria-hidden /> Actualizar
+            </Button>
+          </>
+        }
+      />
       {aviso && (
-        <p role="status" className="text-sm">
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-success/40 bg-success-soft px-3 py-2 text-sm text-success-foreground"
+        >
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
           {aviso}
         </p>
       )}
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="bg-danger-soft">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {lista === null ? (
-        <p role="status">Cargando…</p>
-      ) : lista.length === 0 ? (
-        <p>No hay propuestas. Ejecuta el lote para revisar el historial.</p>
-      ) : (
-        lista.map((p) => <TarjetaPropuesta key={p.id} p={p} onAccion={accion} />)
-      )}
+      <section aria-labelledby="titulo-propuestas" className="space-y-3">
+        <TituloSeccion id="titulo-propuestas" cuenta={lista?.length}>
+          Propuestas del curador
+        </TituloSeccion>
+        {lista === null ? (
+          <Cargando />
+        ) : lista.length === 0 ? (
+          <EstadoVacio icono={BookOpenCheck} titulo="No hay propuestas.">
+            Ejecuta el lote para revisar el historial.
+          </EstadoVacio>
+        ) : (
+          lista.map((p) => <TarjetaPropuesta key={p.id} p={p} onAccion={accion} />)
+        )}
+      </section>
     </div>
   );
 }

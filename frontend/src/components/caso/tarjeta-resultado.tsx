@@ -6,9 +6,9 @@ import type { DatosCierre, DatosEscalamiento } from "@/lib/mensajes";
 /** Escalamiento a N2: motivo, ANS y siguiente paso (todo construido por el backend desde el estado). */
 export function TarjetaEscalamiento({ datos }: { datos: DatosEscalamiento }) {
   return (
-    <Alert role="status" className="max-w-xl border-sky-700">
-      <Headset aria-hidden />
-      <AlertTitle>Tu caso pasó a un técnico de N2</AlertTitle>
+    <Alert role="status" className="max-w-xl border-info/40 bg-info-soft p-3 shadow-xs">
+      <Headset aria-hidden className="text-info-foreground" />
+      <AlertTitle className="font-semibold">Tu caso pasó a un técnico de N2</AlertTitle>
       <AlertDescription>
         <dl className="mt-1 grid gap-1 text-sm">
           <div>
@@ -30,10 +30,10 @@ export function TarjetaEscalamiento({ datos }: { datos: DatosEscalamiento }) {
 
 export function TarjetaCierre({ datos }: { datos: DatosCierre }) {
   return (
-    <Alert role="status" className="max-w-xl border-emerald-700">
-      <CheckCircle2 aria-hidden className="text-emerald-700" />
-      <AlertTitle>Caso cerrado como resuelto</AlertTitle>
-      <AlertDescription>
+    <Alert role="status" className="max-w-xl border-success/40 bg-success-soft p-3 shadow-xs">
+      <CheckCircle2 aria-hidden className="text-success-foreground" />
+      <AlertTitle className="font-semibold">Caso cerrado como resuelto</AlertTitle>
+      <AlertDescription className="text-foreground">
         {datos.solucion ? `Solución: ${datos.solucion}.` : "Quedó resuelto."} El registro quedó guardado.
       </AlertDescription>
     </Alert>

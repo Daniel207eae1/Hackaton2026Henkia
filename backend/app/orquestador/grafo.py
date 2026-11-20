@@ -58,7 +58,7 @@ from app.orquestador.nodos_accion import FlujoAccion
 from app.orquestador.nodos_captura import FlujoCaptura
 from app.orquestador.nodos_diagnostico import FlujoDiagnostico
 from app.politicas.catalogo import catalogo
-from app.seguridad.compuerta_preguntas import FiltroPreguntas, disponibles_desde_slots
+from app.seguridad.compuerta_preguntas import FiltroPreguntas, disponibles_desde_slots, preguntas_de
 from app.seguridad.guardia_entrada import MENSAJE_IDENTIDAD, NOTA_AUTORIDAD, analizar
 
 MENSAJE_SIN_MODELO = (
@@ -106,7 +106,9 @@ _SI = re.compile(
 _NO = re.compile(
     r"\b(sigue|todavia (no|falla|sale|aparece)|aun no|no funciona|no sirve|persiste|tampoco|sigo con|"
     r"no (me )?(abre|carga|imprime|sincroniza|quedo|se soluciono|se resolvio|ha (cambiado|funcionado))|"
-    r"igual que antes|(el )?mismo (error|problema))\b"
+    r"igual que antes|(el )?mismo (error|problema)|"
+    r"no (me )?(funciono|sirvio|resulto|cambio nada)|y nada|nada que ver|sin cambios|"
+    r"(ya )?lo (intente|hice|probe)\b[^.]*\b(nada|igual|sigue|no))\b"
 )
 MENSAJE_CASO_ESCALADO = (
     "Tu caso ya está con un técnico de N2, que tiene todo lo que revisamos. Si es un problema distinto, "
@@ -651,7 +653,9 @@ def construir_grafo(
             # Este turno ya informó el masivo (plantilla del código): no se agrega otra respuesta del LLM.
             return {"etapa": Etapa.ACLARACION.value}
         slots = estado.get("slots") or {}
-        filtro = FiltroPreguntas(disponibles_desde_slots(slots))
+        # Preguntas ya hechas en el caso: repetirlas con otras palabras parece que el sistema olvidó la respuesta.
+        previas = [p for m in estado.get("mensajes", []) if m.get("rol") == "sistema" for p in preguntas_de(m["texto"])]
+        filtro = FiltroPreguntas(disponibles_desde_slots(slots), previas=previas)
         partes: list[str] = []
 
         def emitir(frases: list[str]) -> None:
@@ -704,6 +708,8 @@ def construir_grafo(
         metricas = dict(estado.get("metricas") or {"preguntas": 0, "bloqueos": 0})
         metricas["preguntas"] = metricas.get("preguntas", 0) + filtro.preguntas
         metricas["bloqueos"] = metricas.get("bloqueos", 0) + len(filtro.bloqueadas)
+        if filtro.repetidas:
+            evento("compuerta.repetida", metadata={"n": str(filtro.repetidas), "caso_id": estado["case_id"]})
         if filtro.meta_descartadas:
             evento(
                 "llm.fuga_razonamiento", metadata={"frases": str(filtro.meta_descartadas), "caso_id": estado["case_id"]}

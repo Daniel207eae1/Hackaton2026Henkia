@@ -18,7 +18,9 @@ const NOMBRE_ROL: Record<Rol, string> = {
 const NAVEGACION: { a: string; texto: string; roles: Rol[] }[] = [
   { a: "/", texto: "Chat", roles: ["colaborador"] },
   { a: "/n2", texto: "Consola N2", roles: ["n2"] },
+  { a: "/casos", texto: "Casos", roles: ["n2"] },
   { a: "/kb", texto: "Revisor de KB", roles: ["revisor_kb"] },
+  { a: "/base-conocimiento", texto: "Base de conocimiento", roles: ["n2", "revisor_kb"] },
   { a: "/auditoria", texto: "Auditoría", roles: ["n2", "colaborador"] },
   { a: "/metricas", texto: "Métricas", roles: ["n2", "revisor_kb"] },
 ];
@@ -60,21 +62,21 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       {/* Barra inicial sólida de la marca (#00170C) en ambos modos. */}
       <header ref={barra} className="sticky top-0 z-40 border-b border-white/10 bg-brand-dark text-white shadow-sm">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
-          <div className="flex items-center gap-2.5">
-            <img src={isotipo} alt="" className="h-8 w-auto drop-shadow" />
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+          <div className="order-1 flex items-center gap-2.5">
+            <img src={isotipo} alt="" className="h-7 w-auto drop-shadow md:h-8" />
             <div className="leading-none">
-              <span className="block font-display text-2xl font-semibold tracking-wide">Soporte de ofimática</span>
-              <span className="block text-[0.7rem] tracking-wide text-brand-sky">Mesa de ayuda · Henkia</span>
+              <span className="block font-display text-xl font-semibold tracking-wide md:text-2xl">Soporte de ofimática</span>
+              <span className="hidden text-[0.7rem] tracking-wide text-brand-sky sm:block">Mesa de ayuda · Henkia</span>
             </div>
           </div>
           <span
             role="status"
-            className="inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-0.5 text-xs font-medium text-amber-200"
+            className="order-3 inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-0.5 text-xs font-medium text-amber-200"
           >
             <FlaskConical className="size-3" aria-hidden /> Modo demostración
           </span>
-          <nav aria-label="Vistas" className="order-last flex w-full gap-1 overflow-x-auto md:order-none md:w-auto">
+          <nav aria-label="Vistas" className="order-4 flex gap-1 overflow-x-auto">
             {NAVEGACION.filter((n) => persona && n.roles.includes(persona.rol)).map((n) => (
               <NavLink
                 key={n.a}
@@ -92,14 +94,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex min-w-0 items-center gap-2">
-            <label htmlFor="ver-como" className="hidden text-sm text-white/75 sm:inline">
+          <div className="order-5 flex w-full min-w-0 items-center gap-2 md:ml-auto md:w-auto">
+            <label htmlFor="ver-como" className="hidden text-sm whitespace-nowrap text-white/75 xl:inline">
               Ver como
             </label>
             <Select value={persona?.id ?? ""} onValueChange={elegir}>
               <SelectTrigger
                 id="ver-como"
-                className="w-52 border-white/20 bg-white/5 text-white hover:bg-white/10 sm:w-72 dark:bg-white/5 dark:hover:bg-white/10 [&_svg]:text-white/70!"
+                className="min-w-0 flex-1 border-white/20 bg-white/5 text-white hover:bg-white/10 md:w-60 md:flex-none xl:w-72 dark:bg-white/5 dark:hover:bg-white/10 [&_svg]:text-white/70!"
                 aria-label="Ver como"
               >
                 <SelectValue placeholder="Elige una persona" />
@@ -119,16 +121,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                 ))}
               </SelectContent>
             </Select>
-            <button
-              type="button"
-              onClick={siguiente}
-              aria-label={`${textoTema}. Cambiar tema`}
-              title={`${textoTema} (clic para cambiar)`}
-              className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/20 text-white/85 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-brand-green-bright"
-            >
-              <IconoTema className="size-4" aria-hidden />
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={siguiente}
+            aria-label={`${textoTema}. Cambiar tema`}
+            title={`${textoTema} (clic para cambiar)`}
+            className="order-2 ml-auto grid size-8 shrink-0 md:order-6 md:ml-0 place-items-center rounded-lg border border-white/20 text-white/85 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-brand-green-bright"
+          >
+            <IconoTema className="size-4" aria-hidden />
+          </button>
         </div>
         <div className="degradado-marca h-0.5 w-full opacity-80" aria-hidden />
       </header>

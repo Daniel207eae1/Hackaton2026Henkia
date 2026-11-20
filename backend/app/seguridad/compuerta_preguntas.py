@@ -62,6 +62,64 @@ def es_pregunta(frase: str) -> bool:
     return "?" in frase or frase.strip().startswith("¿")
 
 
+# Palabras que no distinguen una pregunta de otra (se ignoran al comparar).
+_VACIAS = {
+    "algun",
+    "alguna",
+    "alguno",
+    "algunos",
+    "cuando",
+    "donde",
+    "desde",
+    "tienes",
+    "puedes",
+    "podrias",
+    "esta",
+    "estas",
+    "este",
+    "esto",
+    "eso",
+    "ese",
+    "para",
+    "pero",
+    "como",
+    "cual",
+    "cuales",
+    "sale",
+    "pasa",
+    "hace",
+    "tambien",
+    "simplemente",
+    "favor",
+    "intentas",
+    "intentar",
+    "ejemplo",
+}
+UMBRAL_REPETIDA = 0.6
+
+
+def palabras_clave(frase: str) -> set[str]:
+    t = unicodedata.normalize("NFKD", frase.lower()).encode("ascii", "ignore").decode()
+    return {w for w in re.findall(r"[a-z0-9]+", t) if len(w) >= 4 and w not in _VACIAS}
+
+
+def preguntas_de(texto: str) -> list[set[str]]:
+    """Palabras clave de cada pregunta de un mensaje anterior del sistema."""
+    return [p for f in re.split(r"(?<=[?.!])\s+|\n", texto) if es_pregunta(f) and len(p := palabras_clave(f)) >= 2]
+
+
+def es_repetida(frase: str, previas: list[set[str]]) -> bool:
+    """La pregunta comparte la mayoría de sus palabras clave con una ya hecha (la misma pregunta con otras palabras)."""
+    actual = palabras_clave(frase)
+    if len(actual) < 2:
+        return False
+    for p in previas:
+        comunes = len(actual & p)
+        if comunes >= 3 and comunes / min(len(actual), len(p)) >= UMBRAL_REPETIDA:
+            return True
+    return False
+
+
 def slot_preguntado(frase: str, disponibles: set[str]) -> str | None:
     """Devuelve el slot consultable por el que pregunta la frase (solo si ya está disponible)."""
     if not es_pregunta(frase):
@@ -78,9 +136,11 @@ class FiltroPreguntas:
     """Acumula el *stream* y entrega frases aprobadas; descarta preguntas por slots consultables."""
 
     disponibles: set[str]
+    previas: list[set[str]] = field(default_factory=list)  # preguntas ya hechas en el caso (palabras clave)
     bloqueadas: list[str] = field(default_factory=list)
     preguntas: int = 0
     meta_descartadas: int = 0
+    repetidas: int = 0
     _buffer: str = ""
 
     def _aprobar(self, frase: str) -> str | None:
@@ -94,6 +154,9 @@ class FiltroPreguntas:
             self.bloqueadas.append(slot)
             return None
         if es_pregunta(frase):
+            if es_repetida(frase, self.previas):
+                self.repetidas += 1  # el usuario ya respondió esto: repetirlo parece que el sistema olvidó
+                return None
             self.preguntas += 1
         return frase
 

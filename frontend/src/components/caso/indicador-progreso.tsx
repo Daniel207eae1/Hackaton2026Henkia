@@ -26,9 +26,19 @@ export const PROGRESO: Record<string, string> = {
 export function IndicadorProgreso({ etapa, detalle }: { etapa: string | null; detalle?: string | null }) {
   const texto = (etapa && PROGRESO[etapa]) || "Revisando…";
   return (
-    <div role="status" aria-live="polite" className="space-y-0.5 text-sm">
-      <Shimmer>{texto}</Shimmer>
-      {detalle && <p className="text-xs text-muted-foreground">{detalle}</p>}
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex max-w-xl items-start gap-3 rounded-xl border border-primary/20 bg-accent/50 px-3 py-2.5 text-sm"
+    >
+      <span className="relative mt-1 flex size-2.5 shrink-0" aria-hidden>
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand-green opacity-60" />
+        <span className="relative inline-flex size-2.5 rounded-full bg-brand-green" />
+      </span>
+      <div className="min-w-0 space-y-0.5">
+        <Shimmer>{texto}</Shimmer>
+        {detalle && <p className="text-xs text-muted-foreground">{detalle}</p>}
+      </div>
     </div>
   );
 }

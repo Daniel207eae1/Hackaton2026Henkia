@@ -365,7 +365,53 @@ class RepositorioITSMPostgres:
                 (dias,),
             )
             f = await cur.fetchone()
-        return {k: float(v) if isinstance(v, Decimal) else v for k, v in f.items()}
+            # Series para las gráficas: casos por día (según resultado) y por aplicación.
+            await cur.execute(
+                """
+                select to_char(date_trunc('day', creado_en), 'YYYY-MM-DD') as dia,
+                       count(*) filter (where resultado = 'resuelto') as resueltos,
+                       count(*) filter (where resultado = 'escalado') as escalados,
+                       count(*) filter (where resultado = 'vinculado_masivo') as vinculados_masivo,
+                       count(*) filter (where resultado is null) as abiertos
+                from operacion.casos where creado_en > now() - make_interval(days => %s)
+                group by 1 order by 1
+                """,
+                (dias,),
+            )
+            por_dia = list(await cur.fetchall())
+            await cur.execute(
+                """
+                select coalesce(nullif(estado_caso->'sintoma'->>'aplicacion', 'desconocida'), 'sin identificar') as app,
+                       count(*) as casos
+                from operacion.casos where creado_en > now() - make_interval(days => %s)
+                group by 1 order by 2 desc
+                """,
+                (dias,),
+            )
+            por_app = {r["app"]: r["casos"] for r in await cur.fetchall()}
+        base = {k: float(v) if isinstance(v, Decimal) else v for k, v in f.items()}
+        return {**base, "por_dia": por_dia, "por_aplicacion": por_app}
+
+    async def listar_casos(self, limite: int = 100) -> list[dict[str, Any]]:
+        """Casos recientes para la vista de N2 (resumen; el detalle sale de `/api/casos/{id}`)."""
+        async with self._pool.connection() as c, c.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                select estado_caso->>'case_id' as case_id, codigo, usuario_id, estado, resultado,
+                       creado_en::text as creado_en, actualizado_en::text as actualizado_en,
+                       estado_caso->'sintoma'->>'aplicacion' as aplicacion,
+                       estado_caso->'sintoma'->>'tipo_sintoma' as tipo_sintoma,
+                       estado_caso->'diagnostico'->>'categoria' as categoria,
+                       estado_caso->'diagnostico'->>'confirmada' as confirmada,
+                       (estado_caso->'diagnostico'->>'probable')::boolean as probable,
+                       estado_caso->>'etapa' as etapa, (estado_caso->>'turnos')::int as turnos,
+                       estado_caso->'masivo'->>'estado' as masivo
+                from operacion.casos where estado_caso ? 'case_id'
+                order by creado_en desc limit %s
+                """,
+                (limite,),
+            )
+            return list(await cur.fetchall())
 
     async def listar_escalamientos(self) -> list[dict[str, Any]]:
         async with self._pool.connection() as c, c.cursor(row_factory=dict_row) as cur:

@@ -9,6 +9,8 @@ Hipotesis (cada turno que haga falta):
      - confirmada con guía → Guia (pasos de la KB citando el artículo)
      - confirmada pero escalar / derivar / acción no disponible por chat → Escalar
      - falta leer logs → acción `leer_logs_aplicacion` (consentimiento) → extractor en cuarentena → vuelve aquí
+     - ya se preguntó, el usuario respondió y nada cambió → se PRUEBA la causa más probable (guía o acción con
+       consentimiento) en vez de volver a preguntar; si no funciona, se descarta y se sigue con la siguiente
      - sin nada pendiente o presupuesto agotado → Escalar (sin_hipotesis, esc. 10)
      - si no → Aclaracion (preguntar lo que solo el usuario sabe)
 """
@@ -55,11 +57,14 @@ _PASO_INTERNO = re.compile(
     re.IGNORECASE,
 )
 _GUIAR = re.compile(r"^\s*guiar(\s+al\s+usuario)?(\s+para)?\s*:?\s*", re.IGNORECASE)
-_NUMERO = re.compile(r"^\s*\d+[.)]\s*")
+# Numeración y viñetas al inicio («1. 1.», «•», «-», «*»), repetidas o no: la numeración la pone el sistema.
+_NUMERO = re.compile(r"^\s*(?:(?:\d+[.)]|[•\-*·])\s*)+")
 
 
 def pasos_para_usuario(pasos: str) -> str:
-    lineas = [_NUMERO.sub("", ln).strip() for ln in pasos.strip().splitlines() if ln.strip()]
+    # La UI muestra texto plano: se quita el Markdown de énfasis (**, __, `) de los artículos.
+    limpio = re.sub(r"\*\*|__|`", "", pasos)
+    lineas = [_NUMERO.sub("", ln).strip() for ln in limpio.strip().splitlines() if ln.strip()]
     utiles = [_GUIAR.sub("", ln).strip() for ln in lineas if not _PASO_INTERNO.search(ln)]
     utiles = [u[:1].upper() + u[1:] for u in utiles if u]
     return "\n".join(f"{i}. {u}" for i, u in enumerate(utiles, 1))
@@ -169,6 +174,7 @@ class FlujoDiagnostico:
             d["hipotesis"] = [h.a_dict() for h in hs]
             cambios: dict[str, Any] = {"etapa": Etapa.HIPOTESIS.value, "fallo_verificacion": False}
             d["siguiente"] = self._siguiente(estado, d, hs, cambios)
+            d["hipotesis"] = [h.a_dict() for h in hs]  # incluye la justificación de la «probable»
             obs.update(output={"siguiente": d["siguiente"], "estados": {h.articulo_id: h.estado for h in hs}})
         escribir({"tipo": "hipotesis", "datos": {"categoria": d.get("categoria"), "hipotesis": _resumen_ui(hs)}})
         cambios.update(
@@ -185,23 +191,37 @@ class FlujoDiagnostico:
         )
         return cambios
 
+    @staticmethod
+    def _solucion(estado: EstadoCaso, h: Hipotesis, cambios: dict[str, Any]) -> str | None:
+        """Camino de la solución de una hipótesis (None si no se puede aplicar por chat)."""
+        # Un artículo sin receta (p. ej., publicado por el curador) solo tiene pasos para el usuario: es una guía.
+        tipo = h.receta.get("tipo_solucion") or ("guia" if not h.receta else None)
+        tool = TOOL_POR_ACCION_KB.get(h.receta.get("accion_catalogo") or "")
+        if tipo == "accion" and tool and tool not in set(estado.get("acciones_excluidas") or []):
+            cambios["accion_candidata"] = {"accion": tool, "motivo": f"{h.articulo_id}: {h.justificacion}"}
+            return "accion"
+        if tipo == "guia":
+            return "guia"
+        return None
+
     def _siguiente(self, estado: EstadoCaso, d: dict[str, Any], hs: list[Hipotesis], cambios: dict[str, Any]) -> str:
         confirmadas = [h for h in hs if h.estado == "confirmada"]
+        estados_previos, d["estados"] = d.get("estados") or {}, {h.articulo_id: h.estado for h in hs}
         if confirmadas:
             h = max(confirmadas, key=lambda x: x.prior)
-            d["confirmada"] = h.articulo_id
+            d["confirmada"], d["probable"] = h.articulo_id, False
             score_traza("tiempo_a_diagnostico", float(estado.get("turnos") or 0), comentario="turnos hasta confirmar")
             evento("diagnostico.confirmado", metadata={"articulo": h.articulo_id, "caso_id": estado["case_id"]})
+            if camino := self._solucion(estado, h, cambios):
+                return camino
             tipo = h.receta.get("tipo_solucion")
-            tool = TOOL_POR_ACCION_KB.get(h.receta.get("accion_catalogo") or "")
-            if tipo == "accion" and tool and tool not in set(estado.get("acciones_excluidas") or []):
-                cambios["accion_candidata"] = {"accion": tool, "motivo": f"{h.articulo_id}: {h.justificacion}"}
-                return "accion"
-            if tipo == "guia":
-                return "guia"
             cambios["motivo_escalamiento"] = "fuera_alcance" if tipo == "derivar" else "requiere_privilegios"
             return "escalar"
-        pendientes = [h for h in hs if h.estado == "pendiente"]
+        # Sin pruebas (receta vacía) no se puede confirmar con evidencia: no mantiene abierto el ciclo de preguntas.
+        pendientes = [h for h in hs if h.estado == "pendiente" and h.receta.get("pruebas")]
+        # Ya se le preguntó al usuario, respondió y la evidencia no cambió: preguntar otra vez sería repetirse
+        # (parece que el sistema olvidó). Se prueba la causa más probable según la KB y el historial.
+        estancado = d.get("siguiente") == "aclarar" and estados_previos == d["estados"]
         if (
             any(requiere_logs(h) for h in pendientes)
             and not d.get("logs_leidos")
@@ -219,10 +239,28 @@ class FlujoDiagnostico:
         abiertas = pendientes + (
             [h for h in hs if h.estado == "no_concluyente"] if d["rondas"] < MAX_RONDAS - 1 else []
         )
-        if not abiertas or d["rondas"] >= MAX_RONDAS:
+        sin_salida = not abiertas or d["rondas"] >= MAX_RONDAS
+        # Preguntar otra vez sería repetirse; si la solución anterior falló, se sigue con la siguiente; y antes de
+        # escalar sin hipótesis, se prueba la más probable. Cada una se prueba una sola vez (al fallar se descarta).
+        if estancado or estado.get("fallo_verificacion") or sin_salida:
+            if probable := self._probable(estado, d, hs, cambios):
+                return probable
+        if sin_salida:
             cambios["motivo_escalamiento"] = "sin_hipotesis"
             return "escalar"
         return "aclarar"
+
+    def _probable(
+        self, estado: EstadoCaso, d: dict[str, Any], hs: list[Hipotesis], cambios: dict[str, Any]
+    ) -> str | None:
+        """La hipótesis no descartada de mayor prior cuya solución se puede aplicar por chat."""
+        for h in sorted((x for x in hs if x.estado != "descartada"), key=lambda x: -x.prior):
+            if camino := self._solucion(estado, h, cambios):
+                d.update(confirmada=h.articulo_id, probable=True)
+                h.justificacion = "Es la causa más frecuente para este síntoma; aún sin evidencia directa"
+                evento("diagnostico.probable", metadata={"articulo": h.articulo_id, "caso_id": estado["case_id"]})
+                return camino
+        return None
 
     @staticmethod
     def tras_hipotesis(estado: EstadoCaso) -> str:
@@ -252,9 +290,18 @@ class FlujoDiagnostico:
                 "motivo_escalamiento": "sin_hipotesis",
                 "linea_tiempo": [_hito(Etapa.GUIA, f"{h['articulo_id']} sin pasos utilizables")],
             }
+        if d.get("probable"):
+            inicio = (
+                "Con lo que revisamos no tengo una prueba directa, pero la causa más frecuente para lo que "
+                f"describes es: {h['hipotesis'].lower()}."
+            )
+        else:
+            inicio = (
+                f"Encontré la causa más probable: {h['hipotesis'].lower()} "
+                f"({h.get('justificacion') or 'según la evidencia'})."
+            )
         texto = (
-            f"Encontré la causa más probable: {h['hipotesis'].lower()} "
-            f"({h.get('justificacion') or 'según la evidencia'}).\n"
+            f"{inicio}\n"
             f"Según el artículo {h['articulo_id']} «{h['titulo']}», te guío paso a paso:\n{pasos}\n\n"
             "Cuando termines, dime si quedó resuelto."
         )

@@ -7,6 +7,8 @@ import { Cargando } from "@/components/vista";
 import type { Persona, Rol } from "@/lib/api";
 import { useVerComo } from "@/lib/ver-como";
 import { Auditoria } from "@/vistas/auditoria";
+import { BaseConocimiento } from "@/vistas/base-conocimiento";
+import { Casos } from "@/vistas/casos";
 import { ChatColaborador } from "@/vistas/chat-colaborador";
 import { ConsolaN2 } from "@/vistas/consola-n2";
 import { Metricas } from "@/vistas/metricas";
@@ -41,6 +43,15 @@ export default function App() {
           element={
             <ConRol roles={["revisor_kb"]} persona={persona}>
               <RevisorKB persona={persona} />
+            </ConRol>
+          }
+        />
+        <Route path="/casos" element={<ConRol roles={["n2"]} persona={persona}><Casos persona={persona} /></ConRol>} />
+        <Route
+          path="/base-conocimiento"
+          element={
+            <ConRol roles={["n2", "revisor_kb"]} persona={persona}>
+              <BaseConocimiento persona={persona} />
             </ConRol>
           }
         />

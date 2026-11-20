@@ -11,15 +11,15 @@ export function TarjetaMasivo({ datos }: { datos: DatosMasivo }) {
   const resuelto = datos.incidente_estado === "resuelto";
   const confirmado = datos.estado === "masivo_confirmado" && !resuelto;
   return (
-    <Alert role="status" className="max-w-xl border-amber-600">
-      <Megaphone aria-hidden />
-      <AlertTitle>
+    <Alert role="status" className="max-w-xl border-warning/50 bg-warning-soft p-3 shadow-xs">
+      <Megaphone aria-hidden className="text-warning-foreground" />
+      <AlertTitle className="font-semibold">
         {resuelto ? "Incidente general resuelto" : confirmado ? "Incidente general confirmado" : "Posible incidente general"}
         {datos.incidente_id && <span className="ml-1 font-normal text-muted-foreground">· {datos.incidente_id}</span>}
       </AlertTitle>
       <AlertDescription>
         {confirmado && datos.mensaje_oficial ? (
-          <blockquote className="border-l-2 pl-2 text-sm">
+          <blockquote className="border-l-2 border-warning pl-2 text-sm text-foreground">
             «{datos.mensaje_oficial}»
             {datos.hora_oficial && <span className="block text-xs text-muted-foreground">Publicado: {datos.hora_oficial}</span>}
           </blockquote>
@@ -92,13 +92,17 @@ export function SeguimientoMasivo({
   if (!activo || !nov?.vinculado || !nov.incidente_estado) return null;
   const resuelto = nov.incidente_estado === "resuelto";
   return (
-    <section aria-label="Incidente general" aria-live="polite" className="rounded-lg border bg-card p-3 text-sm">
-      <h2 className="flex items-center gap-1 font-medium">
-        <RadioTower className="size-4" aria-hidden /> Incidente general · {nov.incidente_id}
+    <section
+      aria-label="Incidente general"
+      aria-live="polite"
+      className="rounded-xl border border-warning/50 bg-warning-soft p-3 text-sm shadow-xs"
+    >
+      <h2 className="flex items-center gap-2 font-semibold">
+        <RadioTower className="size-4 text-warning-foreground" aria-hidden /> Incidente general · {nov.incidente_id}
       </h2>
       <p className="mt-1">{TEXTO_ESTADO[nov.incidente_estado] ?? nov.incidente_estado}</p>
       {nov.incidente_estado === "publicado" && nov.mensaje_oficial && (
-        <blockquote className="mt-1 border-l-2 pl-2 text-xs">
+        <blockquote className="mt-1 border-l-2 border-warning pl-2 text-xs">
           «{nov.mensaje_oficial}»{nov.hora_oficial && ` (${nov.hora_oficial})`}
         </blockquote>
       )}

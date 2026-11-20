@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
@@ -227,6 +228,39 @@ async def escalamientos(
     request: Request, persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))]
 ) -> list[dict[str, Any]]:
     return await request.app.state.itsm.listar_escalamientos()
+
+
+@router.get("/n2/casos")
+async def casos_n2(
+    request: Request, persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))], limite: int = 100
+) -> list[dict[str, Any]]:
+    """Casos recientes (resumen). El detalle completo —diagnóstico, hipótesis, acciones— es `GET /api/casos/{id}`."""
+    return await request.app.state.itsm.listar_casos(max(1, min(limite, 300)))
+
+
+# ------------------------------------------------------------------ Base de conocimiento (solo lectura)
+def _puede_ver_kb(persona: Persona) -> None:
+    if persona.rol not in (Rol.N2, Rol.REVISOR_KB):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo N2 o el revisor de KB")
+
+
+@router.get("/kb/articulos")
+async def articulos_kb(request: Request, persona: Annotated[Persona, Depends(persona_actual)]) -> list[dict[str, Any]]:
+    _puede_ver_kb(persona)
+    return await request.app.state.kb.articulos()
+
+
+@router.get("/kb/articulos/{articulo_id}")
+async def articulo_kb(
+    articulo_id: str, request: Request, persona: Annotated[Persona, Depends(persona_actual)]
+) -> dict[str, Any]:
+    _puede_ver_kb(persona)
+    if not re.fullmatch(r"KB-SIM-\d{3}", articulo_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artículo no encontrado")
+    art = await request.app.state.kb.articulo(articulo_id)
+    if art is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artículo no encontrado")
+    return art
 
 
 @router.post("/n2/escalamientos/{escalamiento_id}/tomar")

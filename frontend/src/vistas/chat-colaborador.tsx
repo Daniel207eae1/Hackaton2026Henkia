@@ -1,8 +1,9 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { ExternalLink, Headset, MessageSquarePlus } from "lucide-react";
+import { ExternalLink, Fingerprint, Headset, MessageSquarePlus } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import isotipo from "@/assets/isotipo.svg";
 import {
   Conversation,
   ConversationContent,
@@ -39,6 +40,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { API_URL, type Persona } from "@/lib/api";
 import { idUltimaEjecutada, lineasRevisando, ultimaParte, type MensajeCaso } from "@/lib/mensajes";
+
+/** Ejemplos que solo rellenan la caja de texto (no se envían solos). */
+const EJEMPLOS = [
+  "El Outlook no me abre desde esta mañana",
+  "Teams no me deja entrar a las reuniones",
+  "La impresora no imprime nada",
+];
 
 function nuevoCaseId(): string {
   return crypto.randomUUID().replaceAll("-", "");
@@ -118,29 +126,55 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-      {/* El chat nunca supera la altura de la pantalla: la conversación hace scroll por dentro. */}
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* El chat nunca supera la altura de la pantalla: la conversación hace scroll por dentro.
+          `--alto-barra` lo publica la barra superior; en móvil queda espacio abajo para «Hablar con una persona». */}
       <section
         aria-label="Conversación con soporte"
-        className="flex h-[calc(100dvh-6.5rem)] min-h-[420px] flex-col rounded-lg border bg-card"
+        className="flex h-[calc(100dvh-var(--alto-barra,4rem)-6rem)] min-h-[420px] flex-col overflow-hidden rounded-2xl border bg-card shadow-sm lg:h-[calc(100dvh-var(--alto-barra,4rem)-2rem)]"
       >
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
-          <IndicadorEtapa etapa={etapa} />
-          <div className="flex items-center gap-2">
-            <SelectorModelo valor={modelo} onCambio={onModelo} />
-          <Button variant="ghost" size="sm" onClick={onNuevo}>
-            <MessageSquarePlus aria-hidden /> Nuevo caso
-          </Button>
+        <header className="space-y-2 border-b bg-muted/40 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h1 className="font-display text-xl leading-none font-semibold">Asistente de soporte</h1>
+              <p className="hidden text-xs text-muted-foreground sm:block">Outlook · Teams · Excel · Word · OneDrive · Impresión</p>
+            </div>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <SelectorModelo valor={modelo} onCambio={onModelo} />
+              <Button variant="outline" size="sm" onClick={onNuevo}>
+                <MessageSquarePlus aria-hidden /> Nuevo caso
+              </Button>
+            </div>
           </div>
+          <IndicadorEtapa etapa={etapa} />
         </header>
 
         <Conversation className="min-h-0 flex-1">
           <ConversationContent>
             {messages.length === 0 ? (
-              <ConversationEmptyState
-                title={`Hola, ${persona.nombre.split(" ")[0]}`}
-                description="Cuéntame qué te está pasando con Outlook, Teams, Excel, Word, OneDrive o la impresora."
-              />
+              <ConversationEmptyState>
+                <img src={isotipo} alt="" className="size-10 opacity-90 sm:size-14" />
+                <div className="space-y-1">
+                  <h2 className="font-display text-2xl sm:text-3xl leading-none font-semibold">Hola, {persona.nombre.split(" ")[0]}</h2>
+                  <p className="max-w-md text-sm text-muted-foreground">
+                    Cuéntame qué te está pasando con Outlook, Teams, Excel, Word, OneDrive o la impresora. Reviso tu
+                    equipo antes de preguntarte y nada se cambia sin tu autorización.
+                  </p>
+                </div>
+                <ul aria-label="Ejemplos para empezar" className="flex max-w-lg flex-wrap justify-center gap-2">
+                  {EJEMPLOS.map((e) => (
+                    <li key={e}>
+                      <button
+                        type="button"
+                        onClick={() => setTexto(e)}
+                        className="rounded-full border bg-background px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:bg-accent"
+                      >
+                        {e}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </ConversationEmptyState>
             ) : (
               messages.map((m) => (
                 <Message key={m.id} from={m.role}>
@@ -216,18 +250,19 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
         </Conversation>
 
         {error && (
-          <Alert variant="destructive" className="mx-3 mb-2 w-auto">
+          <Alert variant="destructive" className="mx-4 mb-2 w-auto bg-danger-soft">
             <AlertDescription>No pude enviar tu mensaje. Revisa tu conexión e intenta de nuevo.</AlertDescription>
           </Alert>
         )}
 
-        <div className="border-t p-3">
+        <div className="border-t bg-muted/30 p-3">
           {errorAdjunto && (
             <p role="alert" className="mb-2 text-sm text-destructive">
               {errorAdjunto}
             </p>
           )}
           <PromptInput
+            className="rounded-xl bg-card shadow-xs"
             onSubmit={enviar}
             accept={TIPOS_CAPTURA}
             multiple
@@ -261,7 +296,10 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
         </div>
       </section>
 
-      <aside className="space-y-3 lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto" aria-label="Detalle del caso">
+      <aside
+        className="space-y-3 pb-16 lg:max-h-[calc(100dvh-var(--alto-barra,4rem)-2rem)] lg:overflow-y-auto lg:pb-16"
+        aria-label="Detalle del caso"
+      >
         <PanelRevisando lineas={lineas} />
         <SeguimientoMasivo
           caseId={caseId}
@@ -271,12 +309,18 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
           onResponder={(t) => void sendMessage({ text: t })}
         />
         <PanelHipotesis datos={ultimaParte(messages, "hipotesis")} />
-        <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
-          <p>
-            Caso: <code className="text-foreground">{caso?.case_id ?? caseId}</code>
+        <div className="rounded-xl border bg-card p-3 text-xs text-muted-foreground shadow-xs">
+          <p className="flex items-center gap-1.5">
+            <Fingerprint className="size-3.5" aria-hidden /> Caso:{" "}
+            <code className="truncate rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">{caso?.case_id ?? caseId}</code>
           </p>
           {caso?.traza_url && (
-            <a className="mt-1 inline-flex items-center gap-1 underline" href={caso.traza_url} target="_blank" rel="noreferrer">
+            <a
+              className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
+              href={caso.traza_url}
+              target="_blank"
+              rel="noreferrer"
+            >
               Ver traza en Langfuse <ExternalLink className="size-3" aria-hidden />
             </a>
           )}
@@ -285,7 +329,8 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
 
       {/* Botón fijo «Hablar con una persona»: escala de inmediato (el backend lo detecta antes de cualquier LLM). */}
       <Button
-        className="fixed right-4 bottom-4 shadow-lg"
+        size="lg"
+        className="fixed right-4 bottom-4 z-30 h-11 rounded-full bg-brand-dark-2 px-5 text-white shadow-lg ring-1 ring-white/10 hover:bg-brand-dark dark:bg-brand-green-bright dark:text-brand-dark dark:hover:bg-brand-green"
         disabled={ocupado || terminado}
         title={terminado ? "Tu caso ya está con soporte o quedó cerrado" : "Pasa tu caso a una persona de soporte"}
         onClick={() => void sendMessage({ text: "Quiero hablar con una persona" })}

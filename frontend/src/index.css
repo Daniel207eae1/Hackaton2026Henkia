@@ -118,6 +118,11 @@
     --chart-3: #00bc52;
     --chart-4: #9dd8ff;
     --chart-5: #112f24;
+    /* Series de las gráficas (paleta validada: CVD y contraste; ver components/graficas.tsx) */
+    --serie-1: #1baf7a;
+    --serie-2: #eb6834;
+    --serie-3: #2a78d6;
+    --serie-4: #eda100;
     --radius: 0.75rem;
     --sidebar: #00170c;
     --sidebar-foreground: #eafaf4;
@@ -166,6 +171,10 @@
     --chart-3: #00bc52;
     --chart-4: #b5fdff;
     --chart-5: #3ddc97;
+    --serie-1: #199e70;
+    --serie-2: #d95926;
+    --serie-3: #3987e5;
+    --serie-4: #c98500;
     --sidebar: #000f08;
     --sidebar-foreground: #eafaf4;
     --sidebar-primary: #00bc52;

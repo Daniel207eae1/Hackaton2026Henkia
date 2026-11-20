@@ -17,7 +17,9 @@ npm run typecheck; npm run lint; npm run test; npm run build
 |---|---|
 | `src/main.tsx`, `src/App.tsx` | *Providers* (router, tooltip, «Ver como») y rutas por rol |
 | `src/components/app-shell.tsx` | Barra superior: «Ver como», «Modo demostración», navegación por rol |
-| `src/vistas/` | Una vista por pantalla: `chat-colaborador`, `auditoria`, `pendiente` (consola N2, KB, métricas hasta su feature) |
+| `src/vistas/` | Una vista por pantalla: `chat-colaborador`, `consola-n2`, `casos` (N2: lista + detalle con diagnóstico), `base-conocimiento` (N2 y revisor, solo lectura), `revisor-kb`, `metricas` (con gráficas), `auditoria` |
+| `src/components/graficas.tsx` | Gráficas en SVG propio (sin dependencias). Paleta validada `--serie-1..4` (CVD y contraste); siempre con leyenda, valores y «Ver como tabla» |
+| `src/components/caso/detalle-caso.tsx` | Detalle del caso (hipótesis y por qué, lo consultado, acciones, conversación), usado por Casos, Auditoría y la ficha N2 |
 | `src/components/caso/` | Piezas propias del caso: `panel-revisando`, `indicador-etapa` (F4: tarjetas de consentimiento/aprobación) |
 | `src/lib/api.ts` | `pedir()` con `X-Ver-Como` |
 | `src/lib/ver-como.tsx` | Contexto de la persona elegida (`localStorage` con try/catch) |

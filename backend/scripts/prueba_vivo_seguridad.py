@@ -1,3 +1,4 @@
+# ruff: noqa: E501, E741
 """Prueba en vivo (API + BD de P2) de las correcciones de seguridad y de la publicación de KB.
 
 Uso: docker compose exec -T api python scripts/prueba_vivo_seguridad.py
@@ -20,7 +21,10 @@ U1, U2, REV, N2 = "USR-001", "USR-002", "REV-01", "TEC-01"
 
 
 def chat(c: httpx.Client, persona: str, case_id: str, texto: str) -> tuple[int, str]:
-    cuerpo = {"id": case_id, "messages": [{"id": uuid.uuid4().hex, "role": "user", "parts": [{"type": "text", "text": texto}]}]}
+    cuerpo = {
+        "id": case_id,
+        "messages": [{"id": uuid.uuid4().hex, "role": "user", "parts": [{"type": "text", "text": texto}]}],
+    }
     r = c.post("/api/chat", json=cuerpo, headers={"X-Ver-Como": persona}, timeout=180)
     texto_resp = "".join(
         json.loads(l[6:]).get("delta", "")
@@ -59,7 +63,10 @@ def main() -> None:
     # 4. Publicación de KB con los datos reales.
     props = c.get("/api/kb/propuestas", headers={"X-Ver-Como": REV}).json()
     pend = [p for p in props if p["estado"] == "pendiente"]
-    plantilla = next((p for p in pend if "por redactar" in p["borrador_md"].lower() or "por confirmar" in p["borrador_md"].lower()), None)
+    plantilla = next(
+        (p for p in pend if "por redactar" in p["borrador_md"].lower() or "por confirmar" in p["borrador_md"].lower()),
+        None,
+    )
     if plantilla:
         r = c.post(f"/api/kb/propuestas/{plantilla['id']}/publicar", headers={"X-Ver-Como": REV})
         ok("borrador incompleto → 422", r.status_code == 422, r.json().get("detail", ""))
@@ -67,7 +74,11 @@ def main() -> None:
     if lista:
         r = c.post(f"/api/kb/propuestas/{lista['id']}/publicar", headers={"X-Ver-Como": REV})
         cuerpo = r.json()
-        ok("publicar sin la función de P2 → aprobada", r.status_code == 200 and cuerpo.get("estado") == "aprobada" and cuerpo.get("en_kb") is False, json.dumps({k: cuerpo.get(k) for k in ("estado", "en_kb", "articulo_publicado")}))
+        ok(
+            "publicar sin la función de P2 → aprobada",
+            r.status_code == 200 and cuerpo.get("estado") == "aprobada" and cuerpo.get("en_kb") is False,
+            json.dumps({k: cuerpo.get(k) for k in ("estado", "en_kb", "articulo_publicado")}),
+        )
         r2 = c.post(f"/api/kb/propuestas/{lista['id']}/publicar", headers={"X-Ver-Como": REV})
         ok("reintentar sobre aprobada no da 409", r2.status_code == 200 and r2.json().get("estado") == "aprobada")
         # Se deja como estaba (dato compartido de P2).
@@ -78,9 +89,24 @@ def main() -> None:
         print(f"     (propuesta {lista['id']} devuelta a pendiente)")
 
     # 5. Límite de POST por persona (60/min) y clave inválida → IP.
-    codigos = [c.post("/api/kb/propuestas/999999/devolver", json={"comentario": "prueba de límite"}, headers={"X-Ver-Como": REV}).status_code for _ in range(62)]
-    ok("POST 61 del minuto → 429", 429 in codigos and codigos[0] != 429, f"primer 429 en #{codigos.index(429) + 1 if 429 in codigos else '-'}")
-    ok("otra persona no queda bloqueada", c.post("/api/kb/propuestas/999999/devolver", json={"comentario": "prueba de límite"}, headers={"X-Ver-Como": N2}).status_code == 403)
+    codigos = [
+        c.post(
+            "/api/kb/propuestas/999999/devolver", json={"comentario": "prueba de límite"}, headers={"X-Ver-Como": REV}
+        ).status_code
+        for _ in range(62)
+    ]
+    ok(
+        "POST 61 del minuto → 429",
+        429 in codigos and codigos[0] != 429,
+        f"primer 429 en #{codigos.index(429) + 1 if 429 in codigos else '-'}",
+    )
+    ok(
+        "otra persona no queda bloqueada",
+        c.post(
+            "/api/kb/propuestas/999999/devolver", json={"comentario": "prueba de límite"}, headers={"X-Ver-Como": N2}
+        ).status_code
+        == 403,
+    )
 
 
 if __name__ == "__main__":
