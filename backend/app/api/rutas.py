@@ -21,6 +21,7 @@ from app.config.ajustes import obtener_ajustes
 from app.directorio.repositorio import Persona, Rol
 from app.integraciones.n2.bandeja import aprobable, huella, limpiar_registro
 from app.llm.registro import modelo_preferido
+from app.observabilidad import monitor
 from app.observabilidad.langfuse import (
     atributos_traza,
     enmascarar_texto,
@@ -177,6 +178,9 @@ async def chat(
     async def generar() -> AsyncIterator[str]:
         # Se aplica a los agentes de este turno. Con LLM_MODO=fake se ignora (ese modo no usa la red).
         ficha_modelo = modelo_preferido.set(x_modelo if ajustes.llm_modo == "real" else None)
+        ficha_monitor = monitor.fijar_caso(case_id)  # Monitor de agentes (ADR 0023): solo metadatos
+        monitor.publicar("turno_inicio")
+        error_turno = False
         t = TraductorEventos()
         for p in t.inicio():
             yield sse(p)
@@ -194,6 +198,7 @@ async def chat(
                     async for evento in grafo.astream(entrada, config, stream_mode="custom"):
                         if evento.get("tipo") == "etapa":
                             etapa = evento["etapa"]
+                            monitor.publicar("etapa", etapa=monitor.etiqueta(etapa))
                         for p in t.traducir(evento):
                             yield sse(p)
                     final = await _estado_del_caso(request, case_id, persona)
@@ -204,9 +209,14 @@ async def chat(
                 yield sse(p)
         except Exception:  # noqa: BLE001 - el usuario nunca recibe silencio
             log.exception("Error en el turno del caso %s", case_id)
+            error_turno = True
             for p in t.error("Ocurrió un error procesando tu mensaje. Intenta de nuevo."):
                 yield sse(p)
         finally:
+            monitor.publicar(
+                "turno_fin", etapa_final=monitor.etiqueta(etapa or ""), traza_url=traza_url, error=error_turno
+            )
+            monitor.liberar_caso(ficha_monitor)
             modelo_preferido.reset(ficha_modelo)
             yield FIN
             flush()

@@ -14,6 +14,7 @@ from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from app.config.ajustes import Ajustes, obtener_ajustes
+from app.observabilidad import monitor
 
 log = logging.getLogger(__name__)
 
@@ -81,12 +82,21 @@ def reiniciar_para_pruebas(cliente: Any = None) -> None:
 
 @contextmanager
 def observacion(nombre: str, tipo: str = "span", **kwargs: Any) -> Iterator[Any]:
-    lf = obtener_langfuse()
-    if lf is None:
-        yield _Nada()
-        return
-    with lf.start_as_current_observation(as_type=tipo, name=nombre, **kwargs) as obs:
-        yield obs
+    # Monitor de agentes (ADR 0023): inicio/fin con duración y error, en ambas ramas. Solo metadatos.
+    inicio_monitor = monitor.agente_inicio(nombre, tipo)
+    error_monitor = False
+    try:
+        lf = obtener_langfuse()
+        if lf is None:
+            yield _Nada()
+            return
+        with lf.start_as_current_observation(as_type=tipo, name=nombre, **kwargs) as obs:
+            yield obs
+    except BaseException:
+        error_monitor = True
+        raise  # la excepción del llamador sigue idéntica
+    finally:
+        monitor.agente_fin(nombre, tipo, inicio_monitor, error_monitor)
 
 
 def atributos_traza(
