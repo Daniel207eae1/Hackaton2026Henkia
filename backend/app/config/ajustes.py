@@ -51,6 +51,12 @@ class Ajustes(BaseSettings):
     zabbix_mcp_timeout_s: float = Field(default=75.0, alias="ZABBIX_MCP_TIMEOUT_S")
     # Equipo de laboratorio a usar cuando el equipo de la persona no existe en Zabbix (solo demo).
     zabbix_equipo_demo: str = Field(default="", alias="ZABBIX_EQUIPO_DEMO")
+    # Aprobaciones N2 (API REST del servidor MCP, ADR 0022). La clave vive solo en el servidor.
+    n2_url: str = Field(default="", alias="N2_URL")
+    n2_api_key: str = Field(default="", alias="N2_API_KEY", repr=False)  # secreto: nunca al navegador ni a logs
+    n2_poll_s: int = Field(default=10, alias="N2_POLL_S")
+    n2_state_file: Path = Field(default=Path("/var/n2/n2.json"), alias="N2_STATE_FILE")
+    n2_sin_ejecutar_min: int = Field(default=30, alias="N2_SIN_EJECUTAR_MIN")
 
     # Espera del consentimiento en la ventana del equipo dentro de un turno (F4)
     consentimiento_espera_max_s: int = Field(default=150, alias="CONSENTIMIENTO_ESPERA_MAX_S")

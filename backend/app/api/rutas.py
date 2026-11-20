@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -18,6 +19,7 @@ from app.api.esquemas import EstadoCasoSalida, PersonaSalida, PeticionChat
 from app.api.stream_protocol import CABECERAS_SSE, FIN, MEDIA_TYPE, TraductorEventos, sse
 from app.config.ajustes import obtener_ajustes
 from app.directorio.repositorio import Persona, Rol
+from app.integraciones.n2.bandeja import aprobable, huella, limpiar_registro
 from app.llm.registro import modelo_preferido
 from app.observabilidad.langfuse import (
     atributos_traza,
@@ -228,6 +230,162 @@ async def escalamientos(
     request: Request, persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))]
 ) -> list[dict[str, Any]]:
     return await request.app.state.itsm.listar_escalamientos()
+
+
+# ------------------------------------------------------------------ Aprobaciones N2 (API del servidor MCP, ADR 0022)
+class DecisionN2(BaseModel):
+    """Solo la nota (y la confirmación del comando): el técnico sale de la sesión, nunca de un campo libre."""
+
+    nota: str = Field(default="", max_length=500)
+    huella: str = Field(pattern=r"^[0-9a-f]{64}$", description="sha256 de lo que el técnico vio (ver bandeja.huella)")
+    model_config = {"extra": "forbid"}
+
+
+_ERRORES_N2 = {
+    "no_configurado": (status.HTTP_503_SERVICE_UNAVAILABLE, "La integración N2 no está configurada en el servidor."),
+    "no_autorizado": (
+        status.HTTP_502_BAD_GATEWAY,
+        "La integración N2 tiene un problema de configuración. Avisa al administrador.",
+    ),
+    "no_existe": (status.HTTP_404_NOT_FOUND, "La solicitud no existe."),
+    "servidor": (status.HTTP_503_SERVICE_UNAVAILABLE, "No pude contactar la API N2; la solicitud sigue pendiente."),
+    "red": (status.HTTP_503_SERVICE_UNAVAILABLE, "No pude contactar la API N2; la solicitud sigue pendiente."),
+    "invalido": (status.HTTP_422_UNPROCESSABLE_CONTENT, "La API N2 rechazó la solicitud."),
+    "incierto": (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "No pude confirmar si la decisión quedó registrada. Recarga para ver el estado antes de repetirla.",
+    ),
+}
+
+
+def _error_n2(err: Exception) -> HTTPException:
+    tipo = getattr(err, "tipo", "red")
+    codigo, texto = _ERRORES_N2.get(tipo, _ERRORES_N2["red"])
+    return HTTPException(codigo, texto)
+
+
+@router.get("/n2/aprobaciones")
+async def aprobaciones_n2(
+    request: Request, persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))], vivo: bool = False
+) -> dict[str, Any]:
+    """Solicitudes de aprobación (en vivo; si la API no responde, la última lista conocida)."""
+    bandeja = request.app.state.bandeja_n2
+    try:
+        lista, fuente = await bandeja.lista(vivo=vivo)
+    except Exception as err:  # noqa: BLE001
+        if getattr(err, "tipo", "") == "no_configurado":
+            return {"configurada": False, "aprobaciones": [], "fuente": "ninguna", "actualizado": None}
+        lista, fuente = bandeja.ultima, "cache"
+    return {
+        "configurada": True,
+        "aprobaciones": [bandeja.enriquecer(a) for a in lista],
+        "fuente": fuente,
+        "error": bandeja.error if fuente == "cache" else None,
+        "actualizado": bandeja.actualizado,
+    }
+
+
+async def _decidir_n2(request: Request, persona: Persona, aprobacion_id: str, aprobar: bool, cuerpo: DecisionN2):
+    bandeja = request.app.state.bandeja_n2
+    nota = cuerpo.nota.strip()
+    if not aprobar and len(nota) < 5:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Para rechazar escribe el motivo (nota).")
+    try:
+        actual = await bandeja.cliente.obtener(aprobacion_id)
+    except Exception as err:  # noqa: BLE001
+        raise _error_n2(err) from err
+    if actual is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "La solicitud no existe.")
+    if aprobar and not aprobable(actual.get("tool")):
+        # Invariante del sistema: nunca comandos libres ni tools fuera de la lista blanca (solo se pueden rechazar).
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Este sistema no permite aprobar esa acción (comando libre o fuera del catálogo). Solo puedes rechazarla.",
+        )
+    if cuerpo.huella != huella(actual):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "La solicitud cambió desde que la viste. Revisa el contenido actualizado."
+        )
+    tecnico = f"{persona.nombre} ({persona.id})"
+    registro = {
+        "id": aprobacion_id,
+        "tool": actual.get("tool"),
+        "equipo": actual.get("equipo"),
+        "caso_id": actual.get("caso_id"),
+        "decision": "aprobar" if aprobar else "rechazar",
+        "tecnico": tecnico,
+        "nota": nota,
+        "en": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    try:
+        r = await bandeja.cliente.decidir(aprobacion_id, aprobar, tecnico, nota)
+    except Exception as err:  # noqa: BLE001
+        tipo = getattr(err, "tipo", "red")
+        await bandeja.almacen.registrar_decision({**registro, "resultado": tipo})
+        if tipo == "conflicto":
+            try:
+                ya = await bandeja.cliente.obtener(aprobacion_id)
+            except Exception:  # noqa: BLE001 - igual es un 409: alguien ya decidió
+                ya = None
+            quien = (ya or {}).get("tecnico_n2") or "otro técnico"
+            estado_ya = (ya or {}).get("estado") or "decidida"
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, f"Otro técnico ya la decidió: {estado_ya} por {quien}."
+            ) from err
+        raise _error_n2(err) from err
+    await bandeja.almacen.registrar_decision({**registro, "resultado": "ok"})
+    evento(
+        f"aprobacion_n2.{'aprobada' if aprobar else 'rechazada'}",
+        metadata={"id": aprobacion_id, "tool": str(actual.get("tool")), "tecnico": persona.id},
+    )
+    return bandeja.enriquecer(r if isinstance(r, dict) else actual)
+
+
+@router.post("/n2/aprobaciones/{aprobacion_id}/aprobar")
+async def aprobar_n2(
+    aprobacion_id: str,
+    cuerpo: DecisionN2,
+    request: Request,
+    persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))],
+) -> dict[str, Any]:
+    return await _decidir_n2(request, persona, aprobacion_id, True, cuerpo)
+
+
+@router.post("/n2/aprobaciones/{aprobacion_id}/rechazar")
+async def rechazar_n2(
+    aprobacion_id: str,
+    cuerpo: DecisionN2,
+    request: Request,
+    persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))],
+) -> dict[str, Any]:
+    return await _decidir_n2(request, persona, aprobacion_id, False, cuerpo)
+
+
+@router.get("/n2/notificaciones")
+async def notificaciones_n2(
+    request: Request, persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))]
+) -> list[dict[str, Any]]:
+    """Avisos de solicitudes nuevas (una por solicitud, persistentes)."""
+    return list(reversed(request.app.state.bandeja_n2.almacen.datos["notificaciones"]))[:100]
+
+
+@router.get("/n2/historial")
+async def historial_n2(request: Request, persona: Annotated[Persona, Depends(requiere_rol(Rol.N2))]) -> dict[str, Any]:
+    """Decisiones propias + auditoría y consentimientos del servidor (solo lectura, para cruzarlos)."""
+    bandeja = request.app.state.bandeja_n2
+    salida: dict[str, Any] = {
+        "decisiones": list(reversed(bandeja.almacen.datos["decisiones"]))[:300],
+        "auditoria": [],
+        "consentimientos": [],
+        "error": None,
+    }
+    try:
+        # Lista blanca de campos y texto enmascarado: solo lo necesario para cruzar con las decisiones.
+        salida["auditoria"] = [limpiar_registro(e) for e in (await bandeja.cliente.auditoria())[:200]]
+        salida["consentimientos"] = [limpiar_registro(c) for c in (await bandeja.cliente.consentimientos())[:200]]
+    except Exception as err:  # noqa: BLE001
+        salida["error"] = _error_n2(err).detail
+    return salida
 
 
 @router.get("/n2/casos")

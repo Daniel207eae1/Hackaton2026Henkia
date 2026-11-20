@@ -17,6 +17,7 @@ El LLM nunca llama esta puerta: la llama el orquestador (código).
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -92,6 +93,14 @@ class Autorizacion:
     aprobada_en: float | None = None
     usada: bool = False
     parametros: dict[str, str] = field(default_factory=dict)  # ligados al consentimiento (archivo + versión)
+
+
+log = logging.getLogger(__name__)
+
+
+def _id_de(datos: dict[str, Any], clave_alterna: str) -> str:
+    """El servidor devuelve el id como `id` o como `aprobacion_id`/`consentimiento_id` (según la versión)."""
+    return str(datos.get("id") or datos.get(clave_alterna) or "")
 
 
 def _motivo(datos: dict[str, Any]) -> str:
@@ -243,9 +252,11 @@ class PuertaZabbix:
             caso_id=caso_id,
         )
         if r.ok:
-            id_ = str(r.datos.get("id", ""))
+            id_ = _id_de(r.datos, "aprobacion_id")
             if not _ID_APROBACION.fullmatch(id_):
+                log.warning("solicitar_aprobacion_n2 sin id reconocible (claves: %s)", sorted(r.datos)[:12])
                 return ResultadoTool(r.tool, False, r.datos, "el servidor devolvió un id de aprobación inválido")
+            r.datos["id"] = id_  # forma única para el resto del flujo
             self._autorizaciones[id_] = Autorizacion(id_, "aprobacion", tool, equipo, caso_id)
             evento("aprobacion_n2.solicitada", metadata={"id": id_, "tool": tool, "caso_id": caso_id})
         return r
@@ -278,9 +289,10 @@ class PuertaZabbix:
             caso_id=caso_id,
         )
         if r.ok:
-            id_ = str(r.datos.get("id", ""))
+            id_ = _id_de(r.datos, "consentimiento_id")
             if not _ID_CONSENTIMIENTO.fullmatch(id_):
                 return ResultadoTool(r.tool, False, r.datos, "el servidor devolvió un id de consentimiento inválido")
+            r.datos["id"] = id_  # forma única para el resto del flujo
             self._autorizaciones[id_] = Autorizacion(id_, "consentimiento", tool, equipo, caso_id, parametros=params)
             evento(
                 "consentimiento.token",

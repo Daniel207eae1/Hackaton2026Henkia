@@ -25,6 +25,8 @@ from app.directorio.repositorio import RepositorioDirectorioMemoria
 from app.integraciones.capturas import AlmacenCapturas
 from app.integraciones.itsm.postgres import RepositorioITSMPostgres
 from app.integraciones.itsm.repositorio import RepositorioITSMMemoria
+from app.integraciones.n2.bandeja import AlmacenN2, BandejaN2
+from app.integraciones.n2.cliente import ClienteN2
 from app.integraciones.zabbix.mcp_cliente import ClienteMCP
 from app.integraciones.zabbix.puerta import PuertaZabbix
 from app.llm.config_modelos import cargar_config
@@ -83,6 +85,7 @@ def crear_app(
     kb: object | None = None,
     masivos: object | None = None,
     curaduria: object | None = None,
+    cliente_n2: ClienteN2 | None = None,
 ) -> FastAPI:
     ajustes = ajustes or obtener_ajustes()
 
@@ -149,6 +152,16 @@ def crear_app(
             app.state.capturas = AlmacenCapturas(ajustes.capturas_dir, ajustes.captura_max_bytes)
             purga = asyncio.create_task(_purgar_capturas(app.state.capturas, ajustes.capturas_retencion_dias))
             pila.callback(purga.cancel)
+            # Aprobaciones N2: sondeo de solo lectura (nunca decide); la decisión la toma un técnico en la UI.
+            app.state.bandeja_n2 = BandejaN2(
+                cliente_n2 or ClienteN2(ajustes.n2_url, ajustes.n2_api_key),
+                AlmacenN2(ajustes.n2_state_file),
+                poll_s=ajustes.n2_poll_s,
+                sin_ejecutar_min=ajustes.n2_sin_ejecutar_min,
+            )
+            if app.state.bandeja_n2.configurada:
+                sondeo = asyncio.create_task(app.state.bandeja_n2.sondear())
+                pila.callback(sondeo.cancel)
             embeddings = app.state.registro.para("embeddings")
             app.state.embeddings = embeddings
             agente_masivos = AgenteMasivos(

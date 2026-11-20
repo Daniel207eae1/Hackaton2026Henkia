@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr t
 COPY pyproject.toml ./
 RUN mkdir -p app && touch app/__init__.py && pip install -e ".[dev]"
 COPY . .
-RUN useradd --create-home --uid 10001 api && chown -R api /app && mkdir -p /var/capturas /var/evaluacion && chown api /var/capturas /var/evaluacion
+RUN useradd --create-home --uid 10001 api && chown -R api /app && mkdir -p /var/capturas /var/evaluacion /var/n2 && chown api /var/capturas /var/evaluacion /var/n2
 USER api
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

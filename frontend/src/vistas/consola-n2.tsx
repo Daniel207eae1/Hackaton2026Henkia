@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Link } from "react-router-dom";
 
+import { BandejaAprobacionesN2 } from "@/components/caso/aprobaciones-n2";
 import { BandejaMasivos, type IncidenteMasivo } from "@/components/caso/bandeja-masivos";
 import { TablaHipotesis, type HipotesisCaso } from "@/components/caso/detalle-caso";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -147,7 +148,7 @@ export function ConsolaN2({ persona }: { persona: Persona }) {
       <EncabezadoVista
         titulo="Consola N2"
         icono={Headset}
-        descripcion="Las aprobaciones de acciones (política aprobacion_n2) se resuelven hoy en el canal del servidor de Zabbix (MCP)."
+        descripcion="Aprueba o rechaza las acciones que pide el agente, revisa incidentes generales y toma los casos escalados."
         acciones={
           <Button variant="outline" size="sm" onClick={() => void cargar()}>
             <RefreshCw aria-hidden /> Actualizar
@@ -159,6 +160,7 @@ export function ConsolaN2({ persona }: { persona: Persona }) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      <BandejaAprobacionesN2 persona={persona} />
       <BandejaMasivos lista={masivos} onAccion={accion} />
       <section aria-labelledby="titulo-escalamientos" className="space-y-3">
         <TituloSeccion id="titulo-escalamientos" cuenta={lista?.length}>
