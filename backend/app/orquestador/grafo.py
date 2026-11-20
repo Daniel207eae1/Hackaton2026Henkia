@@ -32,10 +32,15 @@ from app.agentes.contexto import (
     NIVEL_TECNICO,
     NOMBRE_SERVICIO,
     SERVICIO_POR_APP,
+    SLOTS_VERSIONES,
+    TOOL_VERSIONES,
     LineaRevision,
     consultar_contexto,
     consultar_lecturas,
+    consultar_versiones,
     lecturas_pendientes,
+    marca_versiones,
+    nombre_archivo_seguro,
     resolver_equipo,
     resumen_para_conversacional,
     revisar_masivo,
@@ -72,6 +77,27 @@ MENSAJE_SIGO_REVISANDO = (
     "Sigo con tu caso con lo que ya me contaste y lo que revisé en tu equipo. Si notas algo nuevo (un mensaje en "
     "pantalla, un cambio), cuéntamelo; si prefieres, usa «Hablar con una persona»."
 )
+# Palabra con extensión de Office escrita por el usuario («Q4.xlsx»). El servidor busca por parte del nombre,
+# así que basta esa palabra; el nombre exacto lo devuelve el historial de versiones.
+ARCHIVO_CON_EXTENSION = re.compile(
+    r"([\w()&+'-][\w()&+'.,-]{0,80}\.(?:xlsx|xlsm|xls|docx|doc|pptx|ppt|pdf|csv|txt))\b", re.I
+)
+
+
+def archivo_del_mensaje(texto: str, del_interprete: str | None) -> str | None:
+    """Regex primero (determinista); el nombre del intérprete solo si termina en esa misma palabra o no hay regex."""
+    palabras = ARCHIVO_CON_EXTENSION.findall(texto or "")
+    if palabras:
+        fin = palabras[-1]
+        if del_interprete and del_interprete.lower().endswith(fin.lower()):
+            return nombre_archivo_seguro(del_interprete) or nombre_archivo_seguro(fin)
+        return nombre_archivo_seguro(fin)
+    # Sin palabra con extensión: el nombre del intérprete solo si el usuario lo escribió tal cual.
+    if del_interprete and del_interprete.lower() in (texto or "").lower():
+        return nombre_archivo_seguro(del_interprete)
+    return None
+
+
 NOMBRES_APP = {
     "outlook": "Outlook",
     "teams": "Teams",
@@ -371,6 +397,11 @@ def construir_grafo(
         for campo in ("que_ve", "desde_cuando"):
             if getattr(r, campo):
                 sintoma[campo] = getattr(r, campo)
+        # Archivo (esc. 7): primero un nombre con extensión escrito por el usuario (regex); si no, el del intérprete.
+        # Solo un nombre con formato acotado y sin forma de instrucción llega a Zabbix.
+        candidato = archivo_del_mensaje(usuario[-1] if usuario else "", r.archivo)
+        if candidato:
+            sintoma["archivo"] = candidato
         sintoma["fuera_de_alcance"] = r.fuera_de_alcance
         sintoma.setdefault("descripcion_usuario", usuario[0][:400] if usuario else "")
         sintoma["origen"] = "usuario"
@@ -411,7 +442,13 @@ def construir_grafo(
         if not estado.get("contexto_tecnico"):
             return Etapa.CONTEXTO.value
         app = (estado.get("sintoma") or {}).get("aplicacion")
-        if estado.get("equipo_zabbix") and lecturas_pendientes(app, estado.get("lecturas_hechas") or []):
+        sintoma = estado.get("sintoma") or {}
+        if estado.get("equipo_zabbix") and lecturas_pendientes(
+            app,
+            estado.get("lecturas_hechas") or [],
+            tipo_sintoma=sintoma.get("tipo_sintoma"),
+            archivo=sintoma.get("archivo"),
+        ):
             return Etapa.CONTEXTO.value
         if requiere_chequeo_masivo(estado):
             return Etapa.CHEQUEO_MASIVO.value
@@ -457,7 +494,26 @@ def construir_grafo(
                 for linea in res.lineas:
                     _revisar(escribir, linea)
                     evidencia.append({"herramienta": f"zabbix.{linea.id}", "estado": linea.estado, "hora": _ahora()})
-            extra = lecturas_pendientes((estado.get("sintoma") or {}).get("aplicacion"), hechas)
+            sintoma = estado.get("sintoma") or {}
+            extra = lecturas_pendientes(
+                sintoma.get("aplicacion"),
+                hechas,
+                tipo_sintoma=sintoma.get("tipo_sintoma"),
+                archivo=sintoma.get("archivo"),
+            )
+            if TOOL_VERSIONES in extra:  # archivo sobrescrito: historial de versiones (solo metadatos)
+                extra.remove(TOOL_VERSIONES)
+                for k in SLOTS_VERSIONES:  # nada de una búsqueda anterior sobrevive
+                    slots.pop(k, None)
+                res = await consultar_versiones(puerta, equipo, caso_id, sintoma["archivo"])
+                slots.update(res.slots)
+                fallidas += res.consultas_fallidas
+                hechas.append(marca_versiones(sintoma["archivo"]))
+                for linea in res.lineas:
+                    _revisar(escribir, linea)
+                    evidencia.append(
+                        {"herramienta": "zabbix.versiones_archivo", "estado": linea.estado, "hora": _ahora()}
+                    )
             if extra:  # lecturas según el síntoma (OneDrive, cola de impresión)
                 res = await consultar_lecturas(puerta, extra, equipo, caso_id)
                 slots.update(res.slots)
@@ -675,7 +731,22 @@ def construir_grafo(
                 contexto_txt += "\n\n" + nivel
             if resumen_diag := resumen_diagnostico(estado.get("diagnostico") or {}):
                 contexto_txt += "\n\n" + resumen_diag
-            if (estado.get("sintoma") or {}).get("fuera_de_alcance") == "hardware":
+            sintoma_ac = estado.get("sintoma") or {}
+            if sintoma_ac.get("tipo_sintoma") == "archivo_sobrescrito" and not sintoma_ac.get("archivo"):
+                contexto_txt += (
+                    "\n\nPara buscar las versiones del archivo necesitas su nombre (o parte del nombre): pídeselo. "
+                    "No pidas rutas ni que te envíe el archivo; nunca se lee su contenido."
+                )
+            elif (slots.get("archivo_coincidencias") or {}).get("valor"):
+                contexto_txt += (
+                    "\n\nVarios archivos coinciden con lo que dijo (sus nombres los ve en el panel «Lo que estoy "
+                    "revisando»); pídele que escriba el nombre exacto del que quiere recuperar."
+                )
+            elif slots.get("archivo_en_onedrive", {}).get("valor") is False:
+                contexto_txt += (
+                    "\n\nNo encontraste ese archivo en su OneDrive: pídele el nombre exacto o una parte distinta."
+                )
+            if sintoma_ac.get("fuera_de_alcance") == "hardware":
                 contexto_txt += (
                     "\n\nParece un daño físico (hardware): explica con amabilidad que eso lo atiende "
                     "un técnico de N2 en sitio y que no se resuelve por chat."

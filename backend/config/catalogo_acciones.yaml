@@ -72,13 +72,13 @@ acciones:
     reversible: false
     verificacion: "La cola queda vacía y un trabajo nuevo se imprime."
   - id: restaurar_version_anterior
-    tool_mcp: null  # el MCP no la ofrece: hoy se escala a N2
+    tool_mcp: restaurar_version_archivo
     nombre: "Restaurar una versión anterior de un archivo"
-    descripcion: "Restaurar desde el historial de versiones de OneDrive la versión elegida del archivo."
+    descripcion: "Restaurar desde el historial de versiones de OneDrive la versión elegida del archivo (solo esa versión de ese archivo)."
     riesgo: "medio"
     politica: "consentimiento"
-    aviso_obligatorio: "El archivo volverá a la versión elegida. La versión actual NO se pierde: queda guardada en el historial de versiones."
-    reversion: "Puedes volver a la versión actual desde el historial de versiones del archivo."
+    aviso_obligatorio: "El archivo volverá a la versión elegida. La versión actual NO se pierde: queda como una copia en la misma carpeta."
+    reversion: "La versión actual queda como copia en la misma carpeta; puedes volver a ella cuando quieras."
     precondiciones: "Parámetro fijo «conservar la versión actual» = sí. El archivo se identifica solo por metadatos."
     reversible: true
     verificacion: "Tamaño y fecha de la versión vigente coinciden con la elegida."

@@ -72,4 +72,4 @@ central del diseño (§3.2, §4.2: "el LLM propone, la política decide"; nada d
   **Duda abierta:** ¿N2 aprueba en nuestra consola (y el backend llama a algo para aprobar) o solo en el canal del servidor?
 - (−) Las variables `ZABBIX_URL`, `ZABBIX_TOKEN_LECTURA` y `ZABBIX_TOKEN_ACCIONES` del contrato pasan al lado del
   servidor MCP. Cambio propuesto al contrato: `ZABBIX_MCP_URL`, `ZABBIX_MCP_TOKEN`, `ZABBIX_EQUIPO_DEMO`.
-- Restaurar una versión anterior (esc. 7) no tiene tool en el MCP: hoy se escala.
+- Restaurar una versión anterior (esc. 7): el MCP ya ofrece `versiones_archivo` y `restaurar_version_archivo` (ADR 0021).

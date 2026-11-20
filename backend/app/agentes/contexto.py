@@ -14,7 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.integraciones.zabbix.puerta import PuertaZabbix, ResultadoTool
+from app.integraciones.zabbix.puerta import PuertaZabbix, ResultadoTool, archivo_valido, version_valida
+from app.seguridad.guardia_entrada import analizar
 
 UMBRAL_DISCO_GB = 5.0  # supuesto del prototipo (LEEME §14)
 SEVERIDAD_MIN_MASIVO = 2  # desde "advertencia"
@@ -39,7 +40,7 @@ def _numero(valor: Any) -> float | None:
 @dataclass
 class LineaRevision:
     id: str
-    estado: str  # ok | anomalia | fallo | pendiente
+    estado: str  # ok | anomalia | fallo | pendiente | no_disponible
     texto: str
 
 
@@ -82,8 +83,17 @@ async def consultar_contexto(puerta: PuertaZabbix, equipo: str, caso_id: str) ->
     return res
 
 
+# El MCP responde así cuando la tool existe solo para los equipos simulados del laboratorio (p. ej., `estado_teams`).
+_SOLO_SIMULADOS = re.compile(r"solo est[aá] disponible en equipos simulados", re.IGNORECASE)
+
+
 def _fallo(res: ResultadoContexto, id_: str, que: str, r: ResultadoTool) -> None:
     res.consultas_fallidas.append(id_)
+    if _SOLO_SIMULADOS.search(str(r.motivo or "")):
+        # No es una falla: Zabbix no ofrece esa lectura para un equipo real. Se dice tal cual.
+        texto = f"Zabbix no ofrece {que} para tu equipo; sigo con lo demás que revisé."
+        res.lineas.append(LineaRevision(id_, "no_disponible", texto))
+        return
     res.lineas.append(LineaRevision(id_, "fallo", f"No pude consultar {que}; seguiré con lo demás."))
 
 
@@ -267,9 +277,119 @@ LECTURAS_POR_APP: dict[str, str] = {
 }
 
 
-def lecturas_pendientes(aplicacion: str | None, ya_leidas: list[str]) -> list[str]:
+TOOL_VERSIONES = "versiones_archivo"
+# Slots del historial de versiones: se limpian al buscar otro archivo (nada queda de una búsqueda anterior).
+SLOTS_VERSIONES = (
+    "archivo_en_onedrive",
+    "archivo_nombre",
+    "archivo_opciones",
+    "versiones_anteriores",
+    "archivo_coincidencias",
+    "version_actual_id",
+    "version_actual_fecha",
+    "version_actual_tamano_kb",
+    "version_restaurar_id",
+    "version_restaurar_fecha",
+    "version_restaurar_tamano_kb",
+)
+
+
+def marca_versiones(archivo: str) -> str:
+    return f"{TOOL_VERSIONES}:{archivo.lower()}"
+
+
+def lecturas_pendientes(
+    aplicacion: str | None, ya_leidas: list[str], *, tipo_sintoma: str | None = None, archivo: str | None = None
+) -> list[str]:
     tool = LECTURAS_POR_APP.get(aplicacion or "")
-    return [tool] if tool and tool not in ya_leidas else []
+    pendientes = [tool] if tool and tool not in ya_leidas else []
+    # Archivo sobrescrito (esc. 7): el historial de versiones del archivo que nombró el usuario, una vez por nombre.
+    if tipo_sintoma == "archivo_sobrescrito" and archivo and marca_versiones(archivo) not in ya_leidas:
+        pendientes.append(TOOL_VERSIONES)
+    return pendientes
+
+
+def nombre_archivo_seguro(nombre: Any) -> str | None:
+    """Nombre de archivo que llega del servidor o del usuario: formato acotado y sin forma de instrucción."""
+    n = str(nombre or "").strip()[:120]
+    if not archivo_valido(n) or analizar(n).banderas:
+        return None
+    return n
+
+
+def _fecha_corta(iso: str | None) -> str:
+    s = str(iso or "")
+    return f"{s[8:10]}/{s[5:7]} {s[11:16]}" if len(s) >= 16 else (s or "fecha desconocida")
+
+
+async def consultar_versiones(puerta: PuertaZabbix, equipo: str, caso_id: str, archivo: str) -> ResultadoContexto:
+    """Historial de versiones (solo metadatos). Se guardan nombre, id, fecha y tamaño; nunca la ruta (lleva el
+    usuario de Windows) ni quién modificó cada versión."""
+    res = ResultadoContexto(equipo=equipo)
+    r = await puerta.versiones_archivo(equipo, caso_id, archivo)
+    d = r.datos.get("resultado")
+    if not r.ok or not isinstance(d, dict):
+        _fallo(res, "versiones", "el historial de versiones del archivo", r)
+        return res
+    coincidencias = [c for c in d.get("coincidencias") or [] if isinstance(c, dict)]
+    nombres = [n for c in coincidencias if (n := nombre_archivo_seguro(c.get("archivo")))]
+    if not coincidencias:
+        res.slots["archivo_en_onedrive"] = _slot(False)
+        res.lineas.append(
+            LineaRevision("versiones", "anomalia", f"No encontré un archivo llamado «{archivo}» en tu OneDrive.")
+        )
+        return res
+    if len(coincidencias) > 1:
+        # Los nombres se muestran al usuario (panel, texto escapado); al LLM solo le llega cuántos son.
+        res.slots["archivo_opciones"] = _slot(" | ".join(nombres[:5]))
+        res.slots["archivo_coincidencias"] = _slot(len(coincidencias))
+        res.lineas.append(
+            LineaRevision(
+                "versiones",
+                "pendiente",
+                f"Coinciden {len(coincidencias)} archivos: " + " · ".join(f"«{n}»" for n in nombres[:5]) + ".",
+            )
+        )
+        return res
+    c = coincidencias[0]
+    nombre = nombres[0] if nombres else None
+    if nombre is None:
+        return _fallo(res, "versiones", "el historial de versiones del archivo (nombre no admitido)", r) or res
+    versiones = [v for v in c.get("versiones") or [] if isinstance(v, dict) and version_valida(str(v.get("id", "")))]
+    actual = next((v for v in versiones if v.get("actual") is True), None)
+    if actual is None:
+        # Sin una versión vigente marcada no se puede saber cuál es «la anterior»: no se propone nada.
+        return _fallo(res, "versiones", "cuál es la versión vigente del archivo", r) or res
+    anteriores = sorted(
+        (v for v in versiones if v.get("actual") is not True), key=lambda v: str(v.get("fecha", "")), reverse=True
+    )
+    res.slots.update(
+        archivo_en_onedrive=_slot(True), archivo_nombre=_slot(nombre), versiones_anteriores=_slot(len(anteriores))
+    )
+    res.slots.update(
+        version_actual_id=_slot(str(actual["id"])),
+        version_actual_fecha=_slot(_texto(actual.get("fecha"), 25)),
+        version_actual_tamano_kb=_slot(_numero(actual.get("tamanoKB"))),
+    )
+    if not anteriores:
+        res.lineas.append(LineaRevision("versiones", "anomalia", f"«{nombre}» no tiene versiones anteriores."))
+        return res
+    v = anteriores[0]  # la más reciente antes de la actual: la que había antes de guardar encima
+    kb = _numero(v.get("tamanoKB"))
+    res.slots.update(
+        version_restaurar_id=_slot(str(v["id"])),
+        version_restaurar_fecha=_slot(_texto(v.get("fecha"), 25)),
+        version_restaurar_tamano_kb=_slot(kb),
+    )
+    res.lineas.append(
+        LineaRevision(
+            "versiones",
+            "ok",
+            f"Encontré «{nombre}» en tu OneDrive con {len(anteriores)} versión(es) anterior(es); "
+            f"la más reciente es del {_fecha_corta(v.get('fecha'))}" + (f" ({kb} KB)." if kb is not None else "."),
+        )
+    )
+    return res
 
 
 async def consultar_lecturas(puerta: PuertaZabbix, tools: list[str], equipo: str, caso_id: str) -> ResultadoContexto:
@@ -373,6 +493,10 @@ ETIQUETAS_SLOTS = {
     "cola_trabajos": "Trabajos en la cola de impresión",
     "perfil_outlook_estado": "Estado del perfil de Outlook",
     "codigo_error": "Código de error (validado de la captura o escrito por el usuario)",
+    "archivo_nombre": "Archivo encontrado en OneDrive",
+    "archivo_coincidencias": "Archivos que coinciden con lo que dijo (sus nombres los ve en el panel)",
+    "versiones_anteriores": "Versiones anteriores disponibles",
+    "version_restaurar_fecha": "Fecha de la versión anterior más reciente",
 }
 ETIQUETAS_SINTOMA = {
     "descripcion_usuario": "Problema que reportó al inicio (sus palabras)",

@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed, ScanSearch, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed, CircleMinus, ScanSearch, XCircle } from "lucide-react";
 
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import type { DatosRevisando, EstadoRevision } from "@/lib/mensajes";
@@ -9,6 +9,7 @@ const ICONO: Record<EstadoRevision, { icono: typeof CheckCircle2; etiqueta: stri
   anomalia: { icono: XCircle, etiqueta: "Consulta correcta, con una anomalía", clase: "text-destructive" },
   fallo: { icono: AlertTriangle, etiqueta: "La consulta falló", clase: "text-warning-foreground" },
   pendiente: { icono: CircleDashed, etiqueta: "Pendiente", clase: "text-muted-foreground" },
+  no_disponible: { icono: CircleMinus, etiqueta: "Lectura no disponible para este equipo", clase: "text-muted-foreground" },
 };
 
 /** Panel «Lo que estoy revisando». El texto se muestra escapado (React), nunca como HTML. */

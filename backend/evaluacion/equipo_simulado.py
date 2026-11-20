@@ -22,6 +22,56 @@ EFECTOS: dict[str, dict[str, Any]] = {
 }
 
 
+# Historial de versiones de OneDrive (forma real del servidor: incluye ruta y autor, que NO deben guardarse).
+def archivos_demo() -> dict[str, list[dict[str, Any]]]:
+    return {
+        "Presupuesto Q4.xlsx": [
+            {
+                "id": "v3",
+                "fecha": "2026-11-19T14:05:00+00:00",
+                "tamanoKB": 12.4,
+                "modificadoPor": "usuario",
+                "actual": True,
+            },
+            {
+                "id": "v2",
+                "fecha": "2026-11-18T21:40:00+00:00",
+                "tamanoKB": 231.0,
+                "modificadoPor": "usuario",
+                "actual": False,
+            },
+            {
+                "id": "v1",
+                "fecha": "2026-11-10T13:00:00+00:00",
+                "tamanoKB": 198.4,
+                "modificadoPor": "usuario",
+                "actual": False,
+            },
+        ]
+    }
+
+
+def responder_versiones(archivos: dict[str, list[dict[str, Any]]], pedido: str) -> dict[str, Any]:
+    coinc = [
+        {"archivo": n, "ruta": f"C:\\Users\\u1\\OneDrive\\{n}", "versiones": vs}
+        for n, vs in archivos.items()
+        if pedido.lower() in n.lower()
+    ]
+    return {"coincidencias": coinc, "detalle": "Solo metadatos del historial de versiones (OneDrive)."}
+
+
+def restaurar(archivos: dict[str, list[dict[str, Any]]], archivo: str, version_id: str) -> bool:
+    """Como el servidor: la versión elegida pasa a ser la vigente y la actual se conserva (copia)."""
+    vs = archivos.get(archivo)
+    elegida = next((v for v in vs or [] if v["id"] == version_id), None)
+    if elegida is None:
+        return False
+    for v in vs:
+        v["actual"] = False
+    vs.insert(0, {**elegida, "id": f"v{len(vs) + 1}", "fecha": "2026-11-19T15:00:00+00:00", "actual": True})
+    return True
+
+
 class EquipoSimulado:
     def __init__(self, cfg: dict[str, Any] | None = None):
         c = cfg or {}
@@ -37,6 +87,7 @@ class EquipoSimulado:
             "onedrive_en_ejecucion": c.get("onedrive_en_ejecucion", True),
             "logs": list(c.get("logs", [])),
             "tablero": c.get("tablero") or {},
+            "archivos": c.get("archivos") or archivos_demo(),
         }
         self.consentimiento = c.get("consentimiento", "aprobado")  # lo que «hace» el usuario en la ventana
         self.aprobacion_n2 = c.get("aprobacion_n2", "aprobada")
@@ -111,6 +162,8 @@ class EquipoSimulado:
                 return {**base, "estado": self.aprobacion_n2}
             case "leer_logs_aplicacion":
                 return {**base, "resultado": e["logs"]}
+            case "versiones_archivo":
+                return {**base, "resultado": responder_versiones(e["archivos"], str(argumentos.get("archivo", "")))}
             case _:
                 # Acción del catálogo: se registra con su autorización y se aplica su efecto.
                 self.acciones.append(
@@ -119,7 +172,12 @@ class EquipoSimulado:
                         "consentimiento_id": argumentos.get("consentimiento_id"),
                         "aprobacion_id": argumentos.get("aprobacion_id"),
                         "con_token": argumentos.get("consentimiento_id") in self._consentimientos,
+                        "parametros": {k: argumentos[k] for k in ("archivo", "version_id") if k in argumentos},
                     }
                 )
+                if nombre == "restaurar_version_archivo" and not restaurar(
+                    e["archivos"], str(argumentos.get("archivo")), str(argumentos.get("version_id"))
+                ):
+                    return {"ok": False, "tool": nombre, "error": "version no encontrada"}
                 e.update(EFECTOS.get(nombre, {}))
                 return {**base, "resultado": "hecho"}

@@ -70,11 +70,15 @@ class Interpretacion(BaseModel):
     tipo_sintoma: TipoSintoma
     que_ve: str | None = Field(description="Lo que el usuario dice ver en pantalla, resumido; null si no lo dijo")
     desde_cuando: str | None = Field(description="Desde cuándo pasa, según el usuario; null si no lo dijo")
+    archivo: str | None = Field(
+        default=None,
+        description="Nombre (o parte del nombre) del archivo que el usuario menciona, tal cual; null si no lo dijo",
+    )
     fuera_de_alcance: Literal["ninguno", "hardware"]
     accion: AccionSeleccionable
     motivo: str = Field(description="Por qué esa acción (o ninguna), en una frase")
 
-    @field_validator("que_ve", "desde_cuando", "motivo")
+    @field_validator("que_ve", "desde_cuando", "motivo", "archivo")
     @classmethod
     def _acotar(cls, v: str | None) -> str | None:
         if v is None:

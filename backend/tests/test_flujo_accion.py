@@ -141,7 +141,8 @@ def test_accion_fallida_no_dice_listo(cliente: TestClient, fake: AdaptadorFake, 
     _elige(fake, "limpiar_cache_teams")
     partes = _partes(_chat(cliente, "teams no carga los chats"))
     texto = _textos(partes)
-    assert "No pude completar la acción" in texto and "sin-sesion-usuario" in texto
+    assert "No pude completar la acción" in texto
+    assert "sin-sesion-usuario" not in texto  # el motivo técnico del servidor no va al chat (puede traer rutas)
     assert "Listo" not in texto
     assert _tarjetas(partes)[-1]["estado"] == "fallida"
 

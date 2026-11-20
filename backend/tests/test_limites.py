@@ -95,3 +95,27 @@ def test_case_id_en_otra_forma_no_cae_en_el_mismo_caso():
     variantes = {cid.upper(), str(uuid.UUID(hex=cid)), "{" + cid + "}"}
     assert uuid_del_caso(cid) == uuid.UUID(hex=cid)
     assert all(uuid_del_caso(v) != uuid_del_caso(cid) for v in variantes)
+
+
+def test_los_secretos_no_aparecen_al_imprimir_la_configuracion():
+    from app.config.ajustes import Ajustes
+
+    a = Ajustes(
+        DATABASE_URL="postgresql://u:clave-bd@h/x", LANGFUSE_SECRET_KEY="sk-lf-secreta", ZABBIX_MCP_TOKEN="tok-secreto"
+    )
+    texto = repr(a) + str(a)
+    assert "clave-bd" not in texto and "sk-lf-secreta" not in texto and "tok-secreto" not in texto
+    assert a.database_url.endswith("@h/x")  # el valor sigue disponible para el código
+
+
+def test_tool_solo_para_equipos_simulados_no_se_reporta_como_falla():
+    from app.agentes.contexto import ResultadoContexto, _teams
+    from app.integraciones.zabbix.puerta import ResultadoTool
+
+    res = ResultadoContexto(equipo="DESKTOP-X")
+    _teams(res, ResultadoTool("estado_teams", False, {}, "'estado_teams' solo esta disponible en equipos simulados"))
+    assert res.lineas[-1].estado == "no_disponible" and "Zabbix no ofrece el estado de Teams" in res.lineas[-1].texto
+    assert res.consultas_fallidas == ["teams"]  # sigue sin dato: se puede preguntar si hace falta
+    res2 = ResultadoContexto(equipo="DESKTOP-X")
+    _teams(res2, ResultadoTool("estado_teams", False, {}, "timeout"))
+    assert res2.lineas[-1].estado == "fallo"

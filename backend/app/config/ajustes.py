@@ -17,8 +17,8 @@ class Ajustes(BaseSettings):
     entorno: str = Field(default="local", alias="ENTORNO")
 
     # Base de datos (P2). Vacía = repositorios en memoria (dobles) mientras P2 entrega.
-    database_url: str = Field(default="", alias="DATABASE_URL")
-    database_url_ro: str = Field(default="", alias="DATABASE_URL_RO")
+    database_url: str = Field(default="", alias="DATABASE_URL", repr=False)  # secreto: nunca en logs ni trazas
+    database_url_ro: str = Field(default="", alias="DATABASE_URL_RO", repr=False)  # secreto: nunca en logs ni trazas
     checkpointer: Literal["memoria", "postgres"] = Field(default="memoria", alias="CHECKPOINTER")
     # Rol que asume cada sesión (mínimo privilegio; nunca ve `evaluacion`). Ver ADR 0009.
     db_rol_app: str = Field(default="app_rw", alias="DB_ROL_APP")
@@ -27,13 +27,19 @@ class Ajustes(BaseSettings):
     modelos_yaml: Path = Field(default=RAIZ_BACKEND / "config" / "modelos.yaml", alias="MODELOS_YAML")
     llm_modo: Literal["real", "fake"] = Field(default="real", alias="LLM_MODO")
     ollama_base_url: str = Field(default="", alias="OLLAMA_BASE_URL")
-    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
+    openrouter_api_key: str = Field(
+        default="", alias="OPENROUTER_API_KEY", repr=False
+    )  # secreto: nunca en logs ni trazas
     embedding_model: str = Field(default="qwen3-embedding:0.6b", alias="EMBEDDING_MODEL")
     embedding_dim: int = Field(default=1024, alias="EMBEDDING_DIM")
 
     # Langfuse
-    langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
-    langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
+    langfuse_public_key: str = Field(
+        default="", alias="LANGFUSE_PUBLIC_KEY", repr=False
+    )  # secreto: nunca en logs ni trazas
+    langfuse_secret_key: str = Field(
+        default="", alias="LANGFUSE_SECRET_KEY", repr=False
+    )  # secreto: nunca en logs ni trazas
     langfuse_host: str = Field(default="http://localhost:3000", alias="LANGFUSE_HOST")
     # URL con la que el navegador abre Langfuse (el contenedor puede usar host.docker.internal).
     langfuse_url_publica: str = Field(default="", alias="LANGFUSE_URL_PUBLICA")
@@ -41,7 +47,7 @@ class Ajustes(BaseSettings):
 
     # Zabbix vía el servidor MCP `zabbix-ofimatica` (ADR 0007). Vacío = sin integración.
     zabbix_mcp_url: str = Field(default="", alias="ZABBIX_MCP_URL")
-    zabbix_mcp_token: str = Field(default="", alias="ZABBIX_MCP_TOKEN")
+    zabbix_mcp_token: str = Field(default="", alias="ZABBIX_MCP_TOKEN", repr=False)  # secreto: nunca en logs ni trazas
     zabbix_mcp_timeout_s: float = Field(default=75.0, alias="ZABBIX_MCP_TIMEOUT_S")
     # Equipo de laboratorio a usar cuando el equipo de la persona no existe en Zabbix (solo demo).
     zabbix_equipo_demo: str = Field(default="", alias="ZABBIX_EQUIPO_DEMO")

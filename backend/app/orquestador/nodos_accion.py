@@ -22,12 +22,48 @@ from langgraph.config import get_stream_writer
 
 from app.agentes.contexto import resumen_para_conversacional
 from app.agentes.interprete import NINGUNA
+from app.integraciones.zabbix.catalogo_mcp import PARAMETROS_ACCION
 from app.integraciones.zabbix.puerta import AccionDenegada, PuertaZabbix
-from app.observabilidad.langfuse import evento, observacion, score_traza
+from app.observabilidad.langfuse import enmascarar_texto, evento, observacion, score_traza
 from app.orquestador.estado import EstadoCaso, Etapa
 from app.politicas.catalogo import Accion, catalogo, texto_ans
 
 TOOL_LOGS = "leer_logs_aplicacion"
+TOOL_RESTAURAR = "restaurar_version_archivo"
+
+
+def _valor(estado: EstadoCaso, slot: str) -> Any:
+    return ((estado.get("slots") or {}).get(slot) or {}).get("valor")
+
+
+def _num(v: Any) -> float | None:
+    try:
+        return round(float(v), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def detalle_restauracion(estado: EstadoCaso) -> dict[str, Any]:
+    """Lo que se le mostró al usuario (fecha y tamaño de la versión elegida) y la versión vigente antes del cambio:
+    se congela en la acción, para mostrar y verificar exactamente eso aunque el estado cambie después."""
+    return {
+        "fecha": _valor(estado, "version_restaurar_fecha"),
+        "tamano_kb": _valor(estado, "version_restaurar_tamano_kb"),
+        "vigente_antes": _valor(estado, "version_actual_id"),
+        "vigente_antes_fecha": _valor(estado, "version_actual_fecha"),
+    }
+
+
+def parametros_accion(estado: EstadoCaso, tool: str) -> dict[str, str] | None:
+    """Parámetros que la acción exige, tomados del estado (nunca del LLM). None si faltan."""
+    if tool not in PARAMETROS_ACCION:
+        return {}
+    if tool == TOOL_RESTAURAR:
+        archivo, version = _valor(estado, "archivo_nombre"), _valor(estado, "version_restaurar_id")
+        if isinstance(archivo, str) and isinstance(version, str):
+            return {"archivo": archivo, "version_id": version}
+    return None
+
 
 # Lectura que verifica cada acción después de ejecutarla (None = solo confirmación del usuario).
 VERIFICACION: dict[str, str | None] = {
@@ -37,6 +73,7 @@ VERIFICACION: dict[str, str | None] = {
     "reparacion_rapida_office": "version_office",
     "recrear_perfil_outlook": None,
     "asignar_licencia_office": "estado_licencia_office",
+    TOOL_RESTAURAR: None,  # se verifica con el historial de versiones (ver `verificacion`)
 }
 
 ESTADOS_ESPERA = {"esperando_n2", "esperando_consentimiento"}
@@ -148,6 +185,8 @@ class FlujoAccion:
             "motivo": motivo[:300],
             "consentimiento_id": None,
             "aprobacion_id": None,
+            "parametros": parametros_accion(estado, c.tool_mcp or "") or {},
+            "detalle": detalle_restauracion(estado) if c.tool_mcp == TOOL_RESTAURAR else None,
             "propuesta_en": _ahora(),
         }
 
@@ -171,6 +210,8 @@ class FlujoAccion:
             motivo_descarte = "acción rechazada o ya hecha"
         elif tool not in catalogo().tools_ejecutables():
             motivo_descarte = "fuera del catálogo"
+        elif parametros_accion(estado, tool) is None:
+            motivo_descarte = "faltan datos para la acción (p. ej., el archivo y la versión)"
         if motivo_descarte:
             return {"etapa": Etapa.DECISION.value, "accion_candidata": None}
         c = catalogo().por_tool(tool)
@@ -289,7 +330,7 @@ class FlujoAccion:
         c = catalogo().por_tool(a["tool"])
         msgs: list[dict[str, Any]] = []
         if not a.get("consentimiento_id"):
-            r = await self.puerta.solicitar_consentimiento(a["tool"], equipo, caso)
+            r = await self.puerta.solicitar_consentimiento(a["tool"], equipo, caso, a.get("parametros") or None)
             if not r.ok:
                 a["estado"], a["motivo_fallo"] = "fallida", r.motivo
                 self._emitir(escribir, a, "No pude abrir la solicitud de autorización.")
@@ -310,7 +351,8 @@ class FlujoAccion:
                     (
                         # Qué hace, el aviso y la reversión ya están en la tarjeta: aquí no se repiten.
                         f"Te propongo {c.nombre[:1].lower()}{c.nombre[1:]} (revisa los detalles en la tarjeta).\n"
-                        "Te apareció una ventana de «Soporte TI» en tu equipo: "
+                        + self._detalle_parametros(estado, a)
+                        + "Te apareció una ventana de «Soporte TI» en tu equipo: "
                         "pulsa «Autorizar» si estás de acuerdo "
                         "o «Rechazar» si prefieres no hacerlo."
                     ),
@@ -402,6 +444,7 @@ class FlujoAccion:
                     estado["case_id"],
                     a["consentimiento_id"],
                     a.get("aprobacion_id"),
+                    a.get("parametros") or None,
                 )
             except AccionDenegada as err:
                 score_traza("accion_sin_token", 1, comentario=str(err))  # nunca debería pasar
@@ -414,11 +457,12 @@ class FlujoAccion:
         if a["tool"] == TOOL_LOGS:
             return await self._logs_a_cuarentena(estado, a, r, escribir)
         if not r.ok:
-            a["estado"], a["motivo_fallo"] = "fallida", r.motivo
+            # El motivo del servidor (puede traer rutas) va enmascarado al registro, nunca al chat.
+            a["estado"], a["motivo_fallo"] = "fallida", enmascarar_texto(str(r.motivo or ""))[:300]
             self._emitir(escribir, a, "La acción no se pudo completar.")
             msg = self._decir(
                 escribir,
-                f"No pude completar la acción ({r.motivo}). No quedó resuelto todavía. ",
+                "No pude completar la acción en tu equipo, así que no quedó resuelto todavía. ",
             )
             return {
                 **self._cerrar(estado, a),
@@ -474,13 +518,65 @@ class FlujoAccion:
             cambios["mensajes"] = [msg]
         return cambios
 
+    @staticmethod
+    def _detalle_parametros(estado: EstadoCaso, a: dict[str, Any]) -> str:
+        """Qué archivo y qué versión exactos (los mismos que muestra la ventana del equipo)."""
+        p = a.get("parametros") or {}
+        if a.get("tool") != TOOL_RESTAURAR or not p:
+            return ""
+        d = a.get("detalle") or {}
+        fecha, kb = d.get("fecha"), d.get("tamano_kb")
+        fecha_txt = f"{fecha[8:10]}/{fecha[5:7]} {fecha[11:16]}" if isinstance(fecha, str) and len(fecha) >= 16 else ""
+        return (
+            f"Archivo: «{p['archivo']}» · versión del {fecha_txt or 'historial'}"
+            + (f" ({kb} KB)" if kb is not None else "")
+            + ". La versión actual quedará como copia en la misma carpeta.\n"
+        )
+
+    async def _verificar_restauracion(self, estado: EstadoCaso, a: dict[str, Any], escribir) -> bool:
+        """Tras restaurar, la versión vigente debe ser NUEVA (otro id que la vigente de antes, fecha posterior) y tener
+        el tamaño de la elegida. Solo metadatos."""
+        p = a.get("parametros") or {}
+        d = a.get("detalle") or {}
+        esperado = _num(d.get("tamano_kb"))
+        try:
+            r = await self.puerta.versiones_archivo(estado["equipo_zabbix"], estado["case_id"], p.get("archivo", ""))
+        except AccionDenegada:
+            r = None
+        vigente = None
+        if r is not None and r.ok:
+            for c in (r.datos.get("resultado") or {}).get("coincidencias") or []:
+                if isinstance(c, dict) and c.get("archivo") == p.get("archivo"):
+                    vigente = next((v for v in c.get("versiones") or [] if v.get("actual") is True), None)
+        ok = (
+            vigente is not None
+            and esperado is not None
+            and d.get("vigente_antes") is not None
+            and str(vigente.get("id")) != str(d["vigente_antes"])
+            and str(vigente.get("fecha") or "") > str(d.get("vigente_antes_fecha") or "")
+            and _num(vigente.get("tamanoKB")) == esperado
+        )
+        escribir(
+            {
+                "tipo": "revisando",
+                "id": f"verificacion-{a['n']}",
+                "estado": "ok" if ok else "fallo",
+                "texto": "La versión vigente del archivo ahora es la que restauré."
+                if ok
+                else "No pude confirmar en el historial que la versión vigente sea la restaurada.",
+            }
+        )
+        return ok
+
     async def verificacion(self, estado: EstadoCaso) -> dict[str, Any]:
         escribir = get_stream_writer()
         escribir({"tipo": "etapa", "etapa": Etapa.VERIFICACION.value})
         a = dict(estado["accion_actual"])
         lectura = VERIFICACION.get(a["tool"])
         tecnica = None
-        if lectura:
+        if a["tool"] == TOOL_RESTAURAR:
+            tecnica = await self._verificar_restauracion(estado, a, escribir)
+        elif lectura:
             r = await self.puerta.leer(lectura, estado["equipo_zabbix"], estado["case_id"])
             tecnica = r.ok
             escribir(

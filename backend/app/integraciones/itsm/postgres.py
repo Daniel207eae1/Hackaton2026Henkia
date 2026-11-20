@@ -224,6 +224,7 @@ class RepositorioITSMPostgres:
                 "equipo": estado.get("equipo_zabbix"),
                 "consentimiento_id": a.get("consentimiento_id"),
                 "aprobacion_id": a.get("aprobacion_id"),
+                **(a.get("parametros") or {}),  # p. ej., archivo + version_id: lo que el usuario autorizó
             }
             cur = await c.execute(
                 """insert into operacion.acciones (caso_id, accion_catalogo_id, version_catalogo, riesgo, politica,
@@ -244,9 +245,11 @@ class RepositorioITSMPostgres:
             )
             accion_id = (await cur.fetchone())[0]
             if a.get("consentimiento_id") and a.get("estado") in ("ejecutada", "fallida"):
+                exacto = a.get("parametros") or {}
                 texto = (
                     f"{c_accion.nombre}. {c_accion.descripcion} {c_accion.aviso_obligatorio} "
-                    f"Autorizado en la ventana «Soporte TI» ({a['consentimiento_id']})."
+                    + (f"Archivo «{exacto['archivo']}», versión {exacto['version_id']}. " if exacto else "")
+                    + f"Autorizado en la ventana «Soporte TI» ({a['consentimiento_id']})."
                 )
                 emitido = datetime.fromisoformat(a.get("propuesta_en") or datetime.now(UTC).isoformat())
                 await c.execute(

@@ -58,6 +58,7 @@ TOOL_POR_ACCION_KB = {
     "limpiar_cache_teams": "limpiar_cache_teams",
     "asignar_licencia": "asignar_licencia_office",
     "reparar_office_rapida": "reparacion_rapida_office",
+    "restaurar_version_archivo": "restaurar_version_archivo",
 }
 
 # herramienta de la receta → claves de evidencia que la responden (o "logs")
@@ -72,6 +73,7 @@ EVIDENCIA_POR_HERRAMIENTA: dict[str, list[str]] = {
     "telemetria.teams.version": ["teams_version"],
     "telemetria.teams.cache_mb": ["teams_estadoCache"],
     "telemetria.audio": ["teams_audio", "teams_dispositivosAudio_cantidad"],
+    "telemetria.onedrive.versiones": ["versiones_anteriores", "archivo_en_onedrive"],
 }
 PERFIL_DANADO = {"sin-perfil", "predeterminado-inexistente", "sin-predeterminado", "sin-cuentas"}
 _ERR = re.compile(r"ERR-SIM-[0-9A-F]{4}")
@@ -145,6 +147,16 @@ def _regla(h: Hipotesis, ev: dict[str, Any]) -> tuple[str, str, list[str]] | Non
             if v < 24000
             else ("descartada", f"Teams versión {v} al día", ["teams_version"])
         )
+    if any(p.get("herramienta") == "telemetria.onedrive.versiones" for p in h.receta.get("pruebas") or []):
+        if ev.get("archivo_en_onedrive") is False:
+            return "descartada", "El archivo no aparece en OneDrive", ["archivo_en_onedrive"]
+        n = ev.get("versiones_anteriores")
+        if isinstance(n, int):
+            return (
+                ("confirmada", f"{n} versión(es) anterior(es) en el historial", ["versiones_anteriores"])
+                if n > 0
+                else ("descartada", "El archivo no tiene versiones anteriores", ["versiones_anteriores"])
+            )
     if a == "KB-SIM-001" and ev.get("perfil_outlook_estado") in PERFIL_DANADO:
         return "confirmada", f"Perfil de Outlook: {ev['perfil_outlook_estado']}", ["perfil_outlook_estado"]
     # Criterio por código de error en los logs (anclado por el extractor).

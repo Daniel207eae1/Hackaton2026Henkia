@@ -10,6 +10,56 @@ from app.integraciones.zabbix.mcp_cliente import ErrorMCP
 EQUIPO = "DESKTOP-00001"
 
 
+# Historial de versiones de OneDrive (forma real del servidor: incluye ruta y autor, que NO deben guardarse).
+def archivos_demo() -> dict[str, list[dict[str, Any]]]:
+    return {
+        "Presupuesto Q4.xlsx": [
+            {
+                "id": "v3",
+                "fecha": "2026-11-19T14:05:00+00:00",
+                "tamanoKB": 12.4,
+                "modificadoPor": "usuario",
+                "actual": True,
+            },
+            {
+                "id": "v2",
+                "fecha": "2026-11-18T21:40:00+00:00",
+                "tamanoKB": 231.0,
+                "modificadoPor": "usuario",
+                "actual": False,
+            },
+            {
+                "id": "v1",
+                "fecha": "2026-11-10T13:00:00+00:00",
+                "tamanoKB": 198.4,
+                "modificadoPor": "usuario",
+                "actual": False,
+            },
+        ]
+    }
+
+
+def responder_versiones(archivos: dict[str, list[dict[str, Any]]], pedido: str) -> dict[str, Any]:
+    coinc = [
+        {"archivo": n, "ruta": f"C:\\Users\\u1\\OneDrive\\{n}", "versiones": vs}
+        for n, vs in archivos.items()
+        if pedido.lower() in n.lower()
+    ]
+    return {"coincidencias": coinc, "detalle": "Solo metadatos del historial de versiones (OneDrive)."}
+
+
+def restaurar(archivos: dict[str, list[dict[str, Any]]], archivo: str, version_id: str) -> bool:
+    """Como el servidor: la versión elegida pasa a ser la vigente y la actual se conserva (copia)."""
+    vs = archivos.get(archivo)
+    elegida = next((v for v in vs or [] if v["id"] == version_id), None)
+    if elegida is None:
+        return False
+    for v in vs:
+        v["actual"] = False
+    vs.insert(0, {**elegida, "id": f"v{len(vs) + 1}", "fecha": "2026-11-19T15:00:00+00:00", "actual": True})
+    return True
+
+
 class MCPFalso:
     def __init__(self, *, disco_libre: float = 120.0, repetidos: dict | None = None, caido: bool = False):
         self.llamadas: list[tuple[str, dict[str, Any]]] = []
@@ -24,6 +74,7 @@ class MCPFalso:
         self.tablero: dict | None = None  # None = todo operativo
         self.sin_tablero = False  # True = el servidor no ofrece estado_servicio (respaldo problemas_activos)
         self.caido = caido
+        self.archivos = archivos_demo()
         self._n = itertools.count(1)
 
     def nombres(self) -> list[str]:
@@ -98,6 +149,11 @@ class MCPFalso:
                 return {**base, "resultado": "16.0.20527.20196"}
             case "estado_licencia_office":
                 return {**base, "resultado": {"producto": "O365ProPlusRetail", "estado": "instalado"}}
+            case "versiones_archivo":
+                return {**base, "resultado": responder_versiones(self.archivos, str(argumentos.get("archivo", "")))}
+            case "restaurar_version_archivo":
+                ok = restaurar(self.archivos, str(argumentos.get("archivo")), str(argumentos.get("version_id")))
+                return {**base, "ok": ok, "resultado": "hecho" if ok else None}
             case "solicitar_consentimiento":
                 return {**base, "id": f"CS-{next(self._n):08d}", "estado": "pendiente"}
             case "consultar_consentimiento":
@@ -126,6 +182,7 @@ def interpretacion(
     que_ve: str | None = None,
     desde_cuando: str | None = None,
     fuera_de_alcance: str = "ninguno",
+    archivo: str | None = None,
 ) -> str:
     """JSON de salida del Intérprete para programar el LLM falso."""
     import json
@@ -137,6 +194,7 @@ def interpretacion(
             "que_ve": que_ve,
             "desde_cuando": desde_cuando,
             "fuera_de_alcance": fuera_de_alcance,
+            "archivo": archivo,
             "accion": accion,
             "motivo": "prueba",
         },

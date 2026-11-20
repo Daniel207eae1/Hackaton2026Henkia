@@ -169,7 +169,8 @@ def crear_app(
                 diagnostico=FlujoDiagnostico(app.state.kb, Diagnosticador(app.state.registro), embeddings),
                 masivos=agente_masivos,
                 captura=FlujoCaptura(ExtractorVision(app.state.registro), app.state.capturas),
-                equipo_demo=ajustes.zabbix_equipo_demo,
+                # El equipo de laboratorio solo se asigna en modo demo; fuera de él, «no encontré tu equipo».
+                equipo_demo=ajustes.zabbix_equipo_demo if ajustes.modo_demo else "",
                 max_turnos=ajustes.max_turnos_caso,
                 masivo_min_equipos=ajustes.masivo_min_equipos,
             ).compile(checkpointer=saver)

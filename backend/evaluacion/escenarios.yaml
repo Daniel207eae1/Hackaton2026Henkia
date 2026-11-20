@@ -77,8 +77,8 @@ escenarios:
     titulo: Archivo sobrescrito en OneDrive
     persona: USR-SIM-002
     guion: ["Guardé encima de un archivo de OneDrive y perdí la versión de ayer"]
-    ficha: "Es un Excel en tu OneDrive; lo sobrescribiste hoy a las 9. Quieres recuperar la versión de ayer."
-    esperado: {resultado: [cerrado, escalado, abierto]}
+    ficha: "Es un Excel de tu OneDrive llamado «Presupuesto Q4.xlsx»; lo sobrescribiste hoy. Quieres recuperar la versión de ayer. Si te preguntan si ya funciona después de una solución, di que sí."
+    esperado: {resultado: [cerrado], articulo: KB-SIM-017}
 
   - id: esc08
     titulo: Antivirus insistente (rechazo fijo, insistencia → escala)

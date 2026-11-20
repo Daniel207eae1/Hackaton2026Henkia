@@ -24,6 +24,7 @@ from typing import Any, NoReturn, Protocol
 
 from app.integraciones.zabbix.catalogo_mcp import (
     BLOQUEADAS,
+    PARAMETROS_ACCION,
     SALIDA_NO_CONFIABLE,
     TOOLS,
     VIGENCIA_CONSENTIMIENTO_S,
@@ -36,6 +37,30 @@ _EQUIPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
 _CASO = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _ID_CONSENTIMIENTO = re.compile(r"^CS-[A-Za-z0-9]{4,32}$")
 _ID_APROBACION = re.compile(r"^AP-[A-Za-z0-9]{4,32}$")
+# Respuestas con datos personales (nombres de archivos, rutas, autores): a Langfuse solo va un resumen.
+SALIDA_RESUMIDA = frozenset({"versiones_archivo"})
+# Nombre (o parte del nombre) de un archivo: sin rutas ni comodines, longitud acotada.
+_ARCHIVO = re.compile(r"^\w[\w .,()&+'-]{0,119}$")
+_VERSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$")
+_VALIDADORES = {"archivo": _ARCHIVO, "version_id": _VERSION_ID}
+
+
+def archivo_valido(nombre: str | None) -> bool:
+    return bool(nombre) and bool(_ARCHIVO.fullmatch(nombre)) and ".." not in nombre
+
+
+def version_valida(version_id: str | None) -> bool:
+    return bool(version_id) and bool(_VERSION_ID.fullmatch(version_id))
+
+
+def _resumen_versiones(datos: dict[str, Any]) -> dict[str, Any]:
+    """Para Langfuse: cuántos archivos y versiones, sin nombres, rutas ni autores."""
+    coinc = (datos.get("resultado") or {}).get("coincidencias") or []
+    return {
+        "ok": datos.get("ok"),
+        "coincidencias": len(coinc),
+        "versiones": sum(len(c.get("versiones") or []) for c in coinc if isinstance(c, dict)),
+    }
 
 
 class ClienteTools(Protocol):
@@ -66,6 +91,7 @@ class Autorizacion:
     creada: float = field(default_factory=time.monotonic)
     aprobada_en: float | None = None
     usada: bool = False
+    parametros: dict[str, str] = field(default_factory=dict)  # ligados al consentimiento (archivo + versión)
 
 
 def _motivo(datos: dict[str, Any]) -> str:
@@ -105,8 +131,14 @@ class PuertaZabbix:
             resultado = ResultadoTool(
                 tool, ok, datos, None if ok else _motivo(datos), no_confiable=tool in SALIDA_NO_CONFIABLE
             )
+            if resultado.no_confiable:
+                salida: dict[str, Any] = {"ok": ok, "motivo": resultado.motivo}
+            elif tool in SALIDA_RESUMIDA:
+                salida = _resumen_versiones(datos)
+            else:
+                salida = datos
             obs.update(
-                output={"ok": ok, "motivo": resultado.motivo} if resultado.no_confiable else datos,
+                output=salida,
                 level=None if ok else "WARNING",
             )
             return resultado
@@ -118,11 +150,22 @@ class PuertaZabbix:
         )
         raise AccionDenegada(f"{tool}: {motivo}")
 
+    def _parametros(self, tool: str, parametros: dict[str, str] | None, caso_id: str) -> dict[str, str]:
+        """Exactamente los parámetros que la acción exige, cada uno con su formato; nada más."""
+        esperados = PARAMETROS_ACCION.get(tool, ())
+        dados = dict(parametros or {})
+        if set(dados) != set(esperados):
+            self._denegar(tool, f"parámetros inválidos (se esperan: {', '.join(esperados) or 'ninguno'})", caso_id)
+        for k, v in dados.items():
+            if not isinstance(v, str) or not _VALIDADORES[k].fullmatch(v) or ".." in v:
+                self._denegar(tool, f"parámetro {k} con formato inválido", caso_id)
+        return dados
+
     @staticmethod
     def _validar(equipo: str, caso_id: str) -> None:
-        if not _EQUIPO.match(equipo):
+        if not _EQUIPO.fullmatch(equipo):
             raise AccionDenegada("equipo con formato inválido")
-        if not _CASO.match(caso_id):
+        if not _CASO.fullmatch(caso_id):
             raise AccionDenegada("caso_id con formato inválido")
 
     async def verificar_catalogo(self) -> dict[str, Any]:
@@ -145,7 +188,7 @@ class PuertaZabbix:
         return await self._llamar("listar_equipos", {})
 
     async def problemas_activos(self, equipo: str = "") -> ResultadoTool:
-        if equipo and not _EQUIPO.match(equipo):
+        if equipo and not _EQUIPO.fullmatch(equipo):
             raise AccionDenegada("equipo con formato inválido")
         return await self._llamar("problemas_activos", {"equipo": equipo} if equipo else {})
 
@@ -161,6 +204,15 @@ class PuertaZabbix:
             self._denegar(tool, "no es una tool de solo lectura", caso_id)
         self._validar(equipo, caso_id)
         return await self._llamar(tool, {"equipo": equipo, "caso_id": caso_id}, caso_id=caso_id)
+
+    async def versiones_archivo(self, equipo: str, caso_id: str, archivo: str) -> ResultadoTool:
+        """Historial de versiones de un archivo de OneDrive: solo metadatos (el contenido nunca se lee)."""
+        self._validar(equipo, caso_id)
+        if not archivo_valido(archivo):
+            self._denegar("versiones_archivo", "nombre de archivo con formato inválido", caso_id)
+        return await self._llamar(
+            "versiones_archivo", {"equipo": equipo, "caso_id": caso_id, "archivo": archivo}, caso_id=caso_id
+        )
 
     # ---------------------------------------------------------- autorizaciones
     def _aprobacion_vigente(self, tool: str, equipo: str, caso_id: str) -> Autorizacion | None:
@@ -192,7 +244,7 @@ class PuertaZabbix:
         )
         if r.ok:
             id_ = str(r.datos.get("id", ""))
-            if not _ID_APROBACION.match(id_):
+            if not _ID_APROBACION.fullmatch(id_):
                 return ResultadoTool(r.tool, False, r.datos, "el servidor devolvió un id de aprobación inválido")
             self._autorizaciones[id_] = Autorizacion(id_, "aprobacion", tool, equipo, caso_id)
             evento("aprobacion_n2.solicitada", metadata={"id": id_, "tool": tool, "caso_id": caso_id})
@@ -208,22 +260,28 @@ class PuertaZabbix:
             evento(f"aprobacion_n2.{a.estado}", metadata={"id": a.id, "tool": a.tool, "caso_id": a.caso_id})
         return r
 
-    async def solicitar_consentimiento(self, tool: str, equipo: str, caso_id: str) -> ResultadoTool:
-        """Abre la ventana «Soporte TI» en el equipo del usuario (el texto lo define el servidor)."""
+    async def solicitar_consentimiento(
+        self, tool: str, equipo: str, caso_id: str, parametros: dict[str, str] | None = None
+    ) -> ResultadoTool:
+        """Abre la ventana «Soporte TI» en el equipo del usuario (el texto lo define el servidor).
+        `parametros` (archivo + versión) quedan ligados al consentimiento: solo sirve para esa combinación."""
         politica = TOOLS.get(tool)
         if politica not in (PoliticaMCP.CONSENTIMIENTO, PoliticaMCP.APROBACION_N2) or tool in BLOQUEADAS:
             self._denegar(tool, "la tool no es una acción permitida", caso_id)
         self._validar(equipo, caso_id)
+        params = self._parametros(tool, parametros, caso_id)
         if politica is PoliticaMCP.APROBACION_N2 and not self._aprobacion_vigente(tool, equipo, caso_id):
             self._denegar(tool, "falta la aprobación de N2 antes de pedir el consentimiento", caso_id)
         r = await self._llamar(
-            "solicitar_consentimiento", {"tool": tool, "equipo": equipo, "caso_id": caso_id}, caso_id=caso_id
+            "solicitar_consentimiento",
+            {"tool": tool, "equipo": equipo, "caso_id": caso_id, **params},
+            caso_id=caso_id,
         )
         if r.ok:
             id_ = str(r.datos.get("id", ""))
-            if not _ID_CONSENTIMIENTO.match(id_):
+            if not _ID_CONSENTIMIENTO.fullmatch(id_):
                 return ResultadoTool(r.tool, False, r.datos, "el servidor devolvió un id de consentimiento inválido")
-            self._autorizaciones[id_] = Autorizacion(id_, "consentimiento", tool, equipo, caso_id)
+            self._autorizaciones[id_] = Autorizacion(id_, "consentimiento", tool, equipo, caso_id, parametros=params)
             evento(
                 "consentimiento.token",
                 metadata={"id": id_, "accion": "solicitado", "tool": tool, "caso_id": caso_id},
@@ -259,17 +317,21 @@ class PuertaZabbix:
         caso_id: str,
         consentimiento_id: str,
         aprobacion_id: str | None = None,
+        parametros: dict[str, str] | None = None,
     ) -> ResultadoTool:
         politica = TOOLS.get(tool)
         if politica not in (PoliticaMCP.CONSENTIMIENTO, PoliticaMCP.APROBACION_N2) or tool in BLOQUEADAS:
             self._denegar(tool, "la tool no es una acción permitida", caso_id)
         self._validar(equipo, caso_id)
+        params = self._parametros(tool, parametros, caso_id)
 
         c = self._autorizaciones.get(consentimiento_id)
         if c is None or c.tipo != "consentimiento":
             self._denegar(tool, "consentimiento inexistente o no emitido por este backend", caso_id)
         if (c.tool, c.equipo, c.caso_id) != (tool, equipo, caso_id):
             self._denegar(tool, "el consentimiento es de otra acción, otro equipo u otro caso", caso_id)
+        if c.parametros != params:
+            self._denegar(tool, "el consentimiento es para otro archivo o versión", caso_id)
         if c.usada:
             self._denegar(tool, "el consentimiento ya se usó (un solo uso)", caso_id)
         if c.estado != "aprobado" or c.aprobada_en is None:
@@ -281,6 +343,7 @@ class PuertaZabbix:
             "equipo": equipo,
             "consentimiento_id": consentimiento_id,
             "caso_id": caso_id,
+            **params,
         }
         if politica is PoliticaMCP.APROBACION_N2:
             a = self._autorizaciones.get(aprobacion_id or "")

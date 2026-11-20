@@ -202,6 +202,34 @@ _KB_DEMO: dict[str, list[dict[str, Any]]] = {
             },
         },
     ],
+    "onedrive.recuperar_archivo": [
+        {
+            "id": "KB-SIM-017",
+            "titulo": "Restaurar una versión anterior de un archivo",
+            "n": 6,
+            "receta": {
+                "hipotesis": "Archivo sobrescrito con historial disponible",
+                "tipo_solucion": "accion",
+                "accion_catalogo": "restaurar_version_archivo",
+                "pruebas": [{"herramienta": "telemetria.onedrive.versiones"}],
+                "criterio_confirmacion": "Hay versiones anteriores a la hora del error",
+                "criterio_descarte": "El archivo no está en OneDrive",
+            },
+        },
+        {
+            "id": "KB-SIM-018",
+            "titulo": "Recuperar un archivo eliminado de OneDrive",
+            "n": 3,
+            "receta": {
+                "hipotesis": "Archivo en la papelera",
+                "tipo_solucion": "guia",
+                "accion_catalogo": None,
+                "pruebas": [{"herramienta": "telemetria.onedrive"}],
+                "criterio_confirmacion": "Eliminación registrada hace menos de 93 días",
+                "criterio_descarte": "Sin eliminación registrada",
+            },
+        },
+    ],
     "impresora.impresion": [
         {
             "id": "KB-SIM-023",

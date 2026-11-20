@@ -1,7 +1,7 @@
 /** Tipos de las partes `data-*` que emite el backend (ADR 0002). */
 import type { UIMessage } from "ai";
 
-export type EstadoRevision = "ok" | "anomalia" | "fallo" | "pendiente";
+export type EstadoRevision = "ok" | "anomalia" | "fallo" | "pendiente" | "no_disponible";
 
 export interface DatosRevisando {
   id: string;
