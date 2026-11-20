@@ -23,6 +23,7 @@ const NAVEGACION: { a: string; texto: string; roles: Rol[] }[] = [
   { a: "/base-conocimiento", texto: "Base de conocimiento", roles: ["n2", "revisor_kb"] },
   { a: "/auditoria", texto: "Auditoría", roles: ["n2", "colaborador"] },
   { a: "/metricas", texto: "Métricas", roles: ["n2", "revisor_kb"] },
+  { a: "/monitor", texto: "Monitor de agentes", roles: ["n2", "revisor_kb"] },
 ];
 
 const TEMA: Record<Tema, { icono: typeof Sun; texto: string }> = {
