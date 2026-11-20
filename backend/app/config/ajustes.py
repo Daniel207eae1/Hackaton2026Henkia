@@ -86,6 +86,9 @@ class Ajustes(BaseSettings):
     # F9: reportes de la evaluación (los escribe `python -m evaluacion.ejecutar`; los lee /api/metricas)
     evaluacion_dir: Path = Field(default=Path("/var/evaluacion"), alias="EVALUACION_DIR")
 
+    # Monitor de agentes (ADR 0023): bus en memoria + /api/monitor/*. false = no publica y los endpoints dan 404.
+    monitor_activo: bool = Field(default=True, alias="MONITOR_ACTIVO")
+
     # Seguridad / límites
     origenes_cors: str = Field(default="http://localhost:5173", alias="ORIGENES_CORS")
     max_caracteres_mensaje: int = Field(default=4000, alias="MAX_CARACTERES_MENSAJE")
