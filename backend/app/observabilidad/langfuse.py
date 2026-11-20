@@ -158,10 +158,15 @@ def url_traza_actual(ajustes: Ajustes | None = None) -> str | None:
     if lf is None:
         return None
     ajustes = ajustes or obtener_ajustes()
-    trace_id = lf.get_current_trace_id()
-    if not trace_id:
+    try:
+        trace_id = lf.get_current_trace_id()
+        if not trace_id:
+            return None
+        # Consulta la API de Langfuse (id del proyecto): si no responde, el turno sigue sin enlace.
+        url = lf.get_trace_url(trace_id=trace_id)
+    except Exception:  # noqa: BLE001 - la observabilidad nunca tumba el turno
+        log.warning("No pude obtener la URL de la traza en Langfuse; sigo sin enlace", exc_info=True)
         return None
-    url = lf.get_trace_url(trace_id=trace_id)
     if url and ajustes.langfuse_url_publica:
         url = url.replace(ajustes.langfuse_host.rstrip("/"), ajustes.langfuse_url_publica.rstrip("/"))
     return url
