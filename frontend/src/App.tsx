@@ -12,6 +12,7 @@ import { Casos } from "@/vistas/casos";
 import { ChatColaborador } from "@/vistas/chat-colaborador";
 import { ConsolaN2 } from "@/vistas/consola-n2";
 import { Metricas } from "@/vistas/metricas";
+import { Monitor } from "@/vistas/monitor";
 import { RevisorKB } from "@/vistas/revisor-kb";
 
 const INICIO: Record<Rol, string> = { colaborador: "/", n2: "/n2", revisor_kb: "/kb" };
@@ -64,6 +65,7 @@ export default function App() {
             </ConRol>
           }
         />
+        <Route path="/monitor" element={<ConRol roles={["n2", "revisor_kb"]} persona={persona}><Monitor persona={persona} /></ConRol>} />
         <Route path="*" element={<Navigate to={INICIO[persona.rol]} replace />} />
       </Routes>
     );

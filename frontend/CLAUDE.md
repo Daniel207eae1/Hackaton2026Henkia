@@ -24,6 +24,7 @@ npm run typecheck; npm run lint; npm run test; npm run build
 | `src/lib/api.ts` | `pedir()` con `X-Ver-Como` |
 | `src/lib/ver-como.tsx` | Contexto de la persona elegida (`localStorage` con try/catch) |
 | `src/lib/mensajes.ts` | Tipos de las partes `data-*` y utilidades |
+| `src/vistas/monitor.tsx`, `src/lib/monitor.ts`, `src/components/monitor/` | Monitor de agentes (ADR 0023): stream con `fetch` + `X-Ver-Como` y reconexión; diagrama con `@xyflow/react` cargado con `React.lazy` |
 | `src/components/ui/` | Generado por shadcn — **no editar** |
 | `src/components/ai-elements/` | Generado por AI Elements — **no editar** |
 

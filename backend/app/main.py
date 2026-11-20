@@ -18,6 +18,7 @@ from app.agentes.curador_kb import CuradorKB
 from app.agentes.diagnosticador import Diagnosticador
 from app.agentes.interprete import Interprete
 from app.agentes.masivos import AgenteMasivos
+from app.api.monitor import router as router_monitor
 from app.api.rutas import router
 from app.config.ajustes import Ajustes, obtener_ajustes
 from app.directorio.postgres import RepositorioDirectorioPostgres
@@ -204,6 +205,7 @@ def crear_app(
         allow_headers=["Content-Type", "X-Ver-Como", "X-Modelo"],
     )
     app.include_router(router)
+    app.include_router(router_monitor)  # Monitor de agentes (ADR 0023)
 
     limite_chat = LimiteTasa(ajustes.limite_chat_por_min)
     limite_post = LimiteTasa(ajustes.limite_post_por_min)

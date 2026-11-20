@@ -31,6 +31,7 @@ pytest -m en_vivo
 | `app/integraciones/itsm/` | ITSM sobre `operacion`: proyección idempotente por turno (`postgres.py`) + doble (`repositorio.py`), ADR 0010 |
 | `app/seguridad/` | `ver_como.py`, `guardia_entrada.py` (heurística + respuestas fijas), `compuerta_preguntas.py` (filtro por frase), `extractor_cuarentena.py` (Dual LLM, único que lee logs), `vision_cuarentena.py` (capturas: saneamiento + OCR + visión, ADR 0015), `limite_tasa.py` (POST por persona: `LIMITE_CHAT_POR_MIN`, `LIMITE_POST_POR_MIN`) |
 | `app/observabilidad/` | Fachada de Langfuse (no-op sin claves), `mask` |
+| `app/observabilidad/monitor.py` + `app/api/monitor.py` | Monitor de agentes (ADR 0023): bus en memoria (solo metadatos, nunca bloquea) + `GET /api/monitor/grafo` y `/stream` (SSE propio, N2 y revisor KB; `MONITOR_ACTIVO`) |
 | `app/directorio/` | Puerto `org`: `postgres.py` (BD de P2, rol `app_rw`, ADR 0009) y doble en memoria (sin `DATABASE_URL`) |
 | `config/` | `modelos.yaml`, `catalogo_acciones.yaml`, `ans.yaml` (versionados) |
 | `evaluacion/` | F9, proceso APARTE: `escenarios.yaml` (jurado + red team), `equipo_simulado.py`, `ejecutar.py` (usuario simulado, métricas, Langfuse). `app/` nunca lo importa |

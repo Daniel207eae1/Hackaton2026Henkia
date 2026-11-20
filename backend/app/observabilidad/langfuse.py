@@ -14,6 +14,7 @@ from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from app.config.ajustes import Ajustes, obtener_ajustes
+from app.observabilidad import monitor
 
 log = logging.getLogger(__name__)
 
@@ -81,12 +82,21 @@ def reiniciar_para_pruebas(cliente: Any = None) -> None:
 
 @contextmanager
 def observacion(nombre: str, tipo: str = "span", **kwargs: Any) -> Iterator[Any]:
-    lf = obtener_langfuse()
-    if lf is None:
-        yield _Nada()
-        return
-    with lf.start_as_current_observation(as_type=tipo, name=nombre, **kwargs) as obs:
-        yield obs
+    # Monitor de agentes (ADR 0023): inicio/fin con duración y error, en ambas ramas. Solo metadatos.
+    inicio_monitor = monitor.agente_inicio(nombre, tipo)
+    error_monitor = False
+    try:
+        lf = obtener_langfuse()
+        if lf is None:
+            yield _Nada()
+            return
+        with lf.start_as_current_observation(as_type=tipo, name=nombre, **kwargs) as obs:
+            yield obs
+    except BaseException:
+        error_monitor = True
+        raise  # la excepción del llamador sigue idéntica
+    finally:
+        monitor.agente_fin(nombre, tipo, inicio_monitor, error_monitor)
 
 
 def atributos_traza(
@@ -148,10 +158,15 @@ def url_traza_actual(ajustes: Ajustes | None = None) -> str | None:
     if lf is None:
         return None
     ajustes = ajustes or obtener_ajustes()
-    trace_id = lf.get_current_trace_id()
-    if not trace_id:
+    try:
+        trace_id = lf.get_current_trace_id()
+        if not trace_id:
+            return None
+        # Consulta la API de Langfuse (id del proyecto): si no responde, el turno sigue sin enlace.
+        url = lf.get_trace_url(trace_id=trace_id)
+    except Exception:  # noqa: BLE001 - la observabilidad nunca tumba el turno
+        log.warning("No pude obtener la URL de la traza en Langfuse; sigo sin enlace", exc_info=True)
         return None
-    url = lf.get_trace_url(trace_id=trace_id)
     if url and ajustes.langfuse_url_publica:
         url = url.replace(ajustes.langfuse_host.rstrip("/"), ajustes.langfuse_url_publica.rstrip("/"))
     return url
