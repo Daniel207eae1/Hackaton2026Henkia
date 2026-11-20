@@ -23,7 +23,10 @@ from tests.test_api_f0 import COLAB, _chat, _partes
 
 
 @pytest.fixture(autouse=True)
-def _bus_limpio():
+def _bus_limpio(monkeypatch: pytest.MonkeyPatch):
+    # Monitor encendido salvo que la prueba lo apague (independiente del .env de quien corre la suite).
+    monkeypatch.setenv("MONITOR_ACTIVO", "true")
+    obtener_ajustes.cache_clear()
     monitor.reiniciar_para_pruebas()
     yield
     monitor.reiniciar_para_pruebas()
