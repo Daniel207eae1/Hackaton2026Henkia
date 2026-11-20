@@ -12,12 +12,14 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import monitor as api_monitor
 from app.config.ajustes import obtener_ajustes
 from app.llm.adaptadores.fake import AdaptadorFake
 from app.observabilidad import langfuse as obs_lf
 from app.observabilidad import monitor
 from app.observabilidad.langfuse import observacion
-from tests.test_api_f0 import _chat, _partes
+from app.orquestador.estado import Etapa
+from tests.test_api_f0 import COLAB, _chat, _partes
 
 
 @pytest.fixture(autouse=True)
@@ -211,3 +213,93 @@ async def test_sin_monitor_el_chat_responde_igual(cliente: TestClient, fake: Ada
         return [(p["type"], p.get("delta"), json.dumps(p.get("data"), sort_keys=True)) for p in partes]
 
     assert huella(sin) == huella(con)
+
+
+# ------------------------------------------------------------------ endpoints
+
+N2 = {"X-Ver-Como": "TEC-SIM-01"}
+REVISOR = {"X-Ver-Como": "REV-SIM-01"}
+
+
+async def _flujo_finito(cola, desconectado, latido_s=15.0):
+    if cola is not None:
+        monitor.desuscribir(cola)
+    yield ": conectado\n\n"
+
+
+@pytest.mark.parametrize("ruta", ["/api/monitor/grafo", "/api/monitor/stream"])
+def test_colaborador_no_ve_el_monitor(cliente: TestClient, ruta: str):
+    assert cliente.get(ruta, headers=COLAB).status_code == 403
+
+
+@pytest.mark.parametrize("ruta", ["/api/monitor/grafo", "/api/monitor/stream"])
+def test_monitor_apagado_responde_404(cliente: TestClient, monkeypatch: pytest.MonkeyPatch, ruta: str):
+    monkeypatch.setenv("MONITOR_ACTIVO", "false")
+    obtener_ajustes.cache_clear()
+    for cab in (N2, REVISOR, COLAB):
+        assert cliente.get(ruta, headers=cab).status_code == 404
+
+
+@pytest.mark.parametrize("cab", [N2, REVISOR])
+def test_grafo_para_n2_y_revisor(cliente: TestClient, cab: dict):
+    r = cliente.get("/api/monitor/grafo", headers=cab)
+    assert r.status_code == 200
+    datos = r.json()
+    ids = {n["id"] for n in datos["nodos"]}
+    # Todos los valores de Etapa que están en el grafo compilado (generado, no a mano), incluida Captura.
+    en_grafo = set(cliente.app.state.grafo.get_graph().nodes)
+    assert {e.value for e in Etapa if e.value in en_grafo} <= ids
+    assert {"Captura", "Recepcion", "Consentimiento", "AprobacionN2", "Escalar", "Cierre"} <= ids
+    assert all({"origen", "destino", "condicional"} <= set(a) for a in datos["aristas"])
+    assert {"origen": "Recepcion", "destino": "Captura", "condicional": True} in datos["aristas"]
+
+
+@pytest.mark.parametrize("cab", [N2, REVISOR])
+def test_stream_para_n2_y_revisor(cliente: TestClient, monkeypatch: pytest.MonkeyPatch, cab: dict):
+    monkeypatch.setattr(api_monitor, "emitir", _flujo_finito)
+    r = cliente.get("/api/monitor/stream", headers=cab)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    assert r.text.startswith(": conectado")
+    assert monitor.suscriptores() == 0
+
+
+def test_stream_sin_cupo_responde_503(cliente: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(monitor, "hay_cupo", lambda: False)
+    assert cliente.get("/api/monitor/stream", headers=N2).status_code == 503
+
+
+async def test_emitir_entrega_eventos_latido_y_libera_la_cola():
+    cola = monitor.suscribir()
+    desconectar = asyncio.Event()
+
+    async def desconectado() -> bool:
+        return desconectar.is_set()
+
+    flujo = api_monitor.emitir(cola, desconectado, latido_s=0.01)
+    assert await anext(flujo) == ": conectado\n\n"
+    assert await anext(flujo) == ": ping\n\n"
+    monitor.publicar("etapa", etapa="Contexto")
+    bloque = await anext(flujo)
+    assert bloque.startswith("data: ") and json.loads(bloque[6:])["etapa"] == "Contexto"
+    desconectar.set()
+    with pytest.raises(StopAsyncIteration):
+        await anext(flujo)
+    assert monitor.suscriptores() == 0
+
+
+async def test_emitir_cancelado_tambien_libera_la_cola():
+    cola = monitor.suscribir()
+
+    async def nunca() -> bool:
+        return False
+
+    flujo = api_monitor.emitir(cola, nunca, latido_s=10)
+    await anext(flujo)
+    tarea = asyncio.ensure_future(anext(flujo))
+    await asyncio.sleep(0)
+    tarea.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await tarea
+    await flujo.aclose()
+    assert monitor.suscriptores() == 0
