@@ -18,13 +18,22 @@ import {
   PromptInputTextarea,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
-import { Shimmer } from "@/components/ai-elements/shimmer";
 import { IndicadorEtapa } from "@/components/caso/indicador-etapa";
+import { IndicadorProgreso } from "@/components/caso/indicador-progreso";
 import { Fuentes, PanelHipotesis } from "@/components/caso/panel-hipotesis";
 import { PanelRevisando } from "@/components/caso/panel-revisando";
 import { TarjetaAccion } from "@/components/caso/tarjeta-accion";
+import {
+  BotonAdjuntar,
+  ListaAdjuntos,
+  MAX_CAPTURA_BYTES,
+  MAX_CAPTURAS,
+  TarjetaCaptura,
+  TIPOS_CAPTURA,
+} from "@/components/caso/capturas";
 import { SeguimientoMasivo, TarjetaMasivo } from "@/components/caso/tarjeta-masivo";
 import { TarjetaCierre, TarjetaEscalamiento } from "@/components/caso/tarjeta-resultado";
+import { Valoracion } from "@/components/caso/valoracion";
 import { leerModeloGuardado, SelectorModelo } from "@/components/selector-modelo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -62,6 +71,10 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
     () =>
       new DefaultChatTransport<MensajeCaso>({
         api: `${API_URL}/api/chat`,
+        // Solo el último mensaje: el historial oficial vive en el backend y así no se reenvían capturas viejas.
+        prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => ({
+          body: { id, messages: messages.slice(-1), trigger, messageId },
+        }),
         // El modelo se lee en cada envío desde la preferencia guardada: cambiarlo no reinicia la conversación.
         headers: () => {
           const elegido = leerModeloGuardado();
@@ -81,19 +94,36 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
   const cierre = ultimaParte(messages, "cierre");
   const terminado = Boolean(escalamiento || cierre);
   const masivo = ultimaParte(messages, "masivo");
+  // La guía de la KB más reciente pregunta «¿ya te funciona?» mientras el caso siga en la etapa Guia.
+  const ultimoMensaje = messages.at(-1);
+  // Último hallazgo del turno en curso (para que el indicador diga qué se acaba de revisar).
+  const detalleTurno =
+    ultimoMensaje?.role === "assistant"
+      ? (ultimoMensaje.parts.filter((p) => p.type === "data-revisando").at(-1)?.data.texto ?? null)
+      : null;
+  const ultimaGuia =
+    terminado || ultimoMensaje?.role !== "assistant"
+      ? null
+      : (ultimoMensaje.parts.filter((p) => p.type === "data-fuentes").at(-1)?.id ?? null);
   // Solo la última acción ejecutada pide «¿ya te funciona?», y solo mientras el caso siga abierto.
   const ultimaEjecutada = terminado ? null : (idUltimaEjecutada(messages) ?? null);
 
+  const [errorAdjunto, setErrorAdjunto] = useState<string | null>(null);
   const enviar = (m: PromptInputMessage) => {
     const limpio = m.text.trim();
-    if (!limpio || ocupado) return;
-    void sendMessage({ text: limpio });
+    if ((!limpio && m.files.length === 0) || ocupado) return;
+    setErrorAdjunto(null);
+    void sendMessage(m.files.length ? { text: limpio, files: m.files } : { text: limpio });
     setTexto("");
   };
 
   return (
-    <div className="grid h-full gap-4 lg:grid-cols-[1fr_320px]">
-      <section aria-label="Conversación con soporte" className="flex min-h-0 flex-col rounded-lg border bg-card">
+    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      {/* El chat nunca supera la altura de la pantalla: la conversación hace scroll por dentro. */}
+      <section
+        aria-label="Conversación con soporte"
+        className="flex h-[calc(100dvh-6.5rem)] min-h-[420px] flex-col rounded-lg border bg-card"
+      >
         <header className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
           <IndicadorEtapa etapa={etapa} />
           <div className="flex items-center gap-2">
@@ -104,7 +134,7 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
           </div>
         </header>
 
-        <Conversation className="min-h-[50vh] flex-1">
+        <Conversation className="min-h-0 flex-1">
           <ConversationContent>
             {messages.length === 0 ? (
               <ConversationEmptyState
@@ -144,7 +174,29 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
                         );
                       if (p.type === "data-escalamiento") return <TarjetaEscalamiento key={p.id ?? i} datos={p.data} />;
                       if (p.type === "data-cierre") return <TarjetaCierre key={p.id ?? i} datos={p.data} />;
-                      if (p.type === "data-fuentes") return <Fuentes key={p.id ?? i} datos={p.data} />;
+                      if (p.type === "data-fuentes")
+                        return (
+                          <Fuentes
+                            key={p.id ?? i}
+                            datos={p.data}
+                            onConfirmar={
+                              p.id === ultimaGuia && etapa === "Guia" && !ocupado
+                                ? (t: string) => void sendMessage({ text: t })
+                                : undefined
+                            }
+                          />
+                        );
+                      // Solo la imagen que adjuntó el propio usuario (data URL local): nunca una URL remota.
+                      if (p.type === "file" && m.role === "user" && p.url.startsWith("data:image/"))
+                        return (
+                          <img
+                            key={i}
+                            src={p.url}
+                            alt={`Captura adjunta: ${p.filename ?? "imagen"}`}
+                            className="max-h-40 rounded-md border"
+                          />
+                        );
+                      if (p.type === "data-captura") return <TarjetaCaptura key={p.id ?? i} datos={p.data} />;
                       if (p.type === "data-masivo") return <TarjetaMasivo key={p.id ?? i} datos={p.data} />;
                       return null;
                     })}
@@ -152,7 +204,13 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
                 </Message>
               ))
             )}
-            {status === "submitted" && <Shimmer>Revisando…</Shimmer>}
+            {ocupado && (
+              <IndicadorProgreso
+                etapa={status === "submitted" ? "Recepcion" : etapa}
+                detalle={status === "streaming" ? detalleTurno : null}
+              />
+            )}
+            {terminado && !ocupado && <Valoracion caseId={caseId} verComo={persona.id} />}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
@@ -164,7 +222,28 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
         )}
 
         <div className="border-t p-3">
-          <PromptInput onSubmit={enviar}>
+          {errorAdjunto && (
+            <p role="alert" className="mb-2 text-sm text-destructive">
+              {errorAdjunto}
+            </p>
+          )}
+          <PromptInput
+            onSubmit={enviar}
+            accept={TIPOS_CAPTURA}
+            multiple
+            maxFiles={MAX_CAPTURAS}
+            maxFileSize={MAX_CAPTURA_BYTES}
+            onError={(e) =>
+              setErrorAdjunto(
+                e.code === "max_files"
+                  ? `Máximo ${MAX_CAPTURAS} capturas por mensaje.`
+                  : e.code === "max_file_size"
+                    ? "Cada captura debe pesar menos de 5 MB."
+                    : "Solo se aceptan imágenes PNG, JPEG o WebP.",
+              )
+            }
+          >
+            <ListaAdjuntos />
             <PromptInputBody>
               <PromptInputTextarea
                 aria-label="Describe tu problema"
@@ -174,14 +253,15 @@ function ChatCaso({ persona, caseId, onNuevo, modelo, onModelo }: PropsCaso) {
                 maxLength={4000}
               />
             </PromptInputBody>
-            <PromptInputFooter className="justify-end">
-              <PromptInputSubmit status={status} disabled={!texto.trim() || ocupado} aria-label="Enviar" />
+            <PromptInputFooter className="justify-between">
+              <BotonAdjuntar disabled={ocupado} />
+              <PromptInputSubmit status={status} disabled={ocupado} aria-label="Enviar" />
             </PromptInputFooter>
           </PromptInput>
         </div>
       </section>
 
-      <aside className="space-y-3" aria-label="Detalle del caso">
+      <aside className="space-y-3 lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto" aria-label="Detalle del caso">
         <PanelRevisando lineas={lineas} />
         <SeguimientoMasivo
           caseId={caseId}

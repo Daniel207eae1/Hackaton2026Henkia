@@ -11,6 +11,7 @@ class Etapa(StrEnum):
     """Nodos del grafo §3.5 (los nombres los muestra el indicador de etapa de la UI)."""
 
     RECEPCION = "Recepcion"
+    CAPTURA = "Captura"  # Módulo B: capturas del turno → extractor de visión en cuarentena
     RESPUESTA_POLITICA = "RespuestaPolitica"  # plantilla fija: prohibida o identidad (sin LLM)
     INTERPRETACION = "Interpretacion"  # slots del usuario + acción candidata (una llamada LLM)
     CONTEXTO = "Contexto"
@@ -82,5 +83,8 @@ class EstadoCaso(TypedDict, total=False):
     diagnostico: dict[str, Any]  # F3: categoría, extracción de logs validada, resultado del ciclo de hipótesis
     guia: dict[str, Any] | None  # F3: guía de la KB aplicada (artículo y sección)
     seguridad: dict[str, Any]
+    capturas_nuevas: list[dict[str, Any]]  # referencias del turno (sha256 + ruta), nunca bytes
+    capturas: list[dict[str, Any]]  # F7: SOLO campos validados por el extractor de visión
+    captura_informada_turno: int | None
     cierre: dict[str, Any]
     linea_tiempo: Annotated[list[dict[str, Any]], operator.add]

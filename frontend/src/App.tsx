@@ -3,12 +3,14 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "@/components/app-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Cargando } from "@/components/vista";
 import type { Persona, Rol } from "@/lib/api";
 import { useVerComo } from "@/lib/ver-como";
 import { Auditoria } from "@/vistas/auditoria";
 import { ChatColaborador } from "@/vistas/chat-colaborador";
 import { ConsolaN2 } from "@/vistas/consola-n2";
-import { VistaPendiente } from "@/vistas/pendiente";
+import { Metricas } from "@/vistas/metricas";
+import { RevisorKB } from "@/vistas/revisor-kb";
 
 const INICIO: Record<Rol, string> = { colaborador: "/", n2: "/n2", revisor_kb: "/kb" };
 
@@ -21,7 +23,8 @@ export default function App() {
   const { persona, error, cargando } = useVerComo();
 
   let contenido: ReactNode;
-  if (cargando) contenido = <p role="status">Cargando…</p>;
+  if (cargando)
+    contenido = <Cargando className="py-10" />;
   else if (error || !persona)
     contenido = (
       <Alert variant="destructive">
@@ -37,7 +40,7 @@ export default function App() {
           path="/kb"
           element={
             <ConRol roles={["revisor_kb"]} persona={persona}>
-              <VistaPendiente titulo="Revisor de KB" feature="F8 (Módulo A)" descripcion="Propuestas de artículo nuevo o de corrección con los casos que las respaldan; Publicar / Devolver con comentario." />
+              <RevisorKB persona={persona} />
             </ConRol>
           }
         />
@@ -46,7 +49,7 @@ export default function App() {
           path="/metricas"
           element={
             <ConRol roles={["n2", "revisor_kb"]} persona={persona}>
-              <VistaPendiente titulo="Métricas" feature="F9" descripcion="FCR, precisión, tiempo hasta el diagnóstico, preguntas por caso y costo real vs. de referencia por agente." />
+              <Metricas persona={persona} />
             </ConRol>
           }
         />

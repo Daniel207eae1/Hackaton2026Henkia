@@ -62,6 +62,18 @@ class Ajustes(BaseSettings):
     def masivo_referencia(self) -> str | None:
         return self.masivo_reloj_demo or None if self.modo_demo else None
 
+    # Módulo B (F7): capturas saneadas en disco (volumen propio, nunca servido por HTTP)
+    capturas_dir: Path = Field(default=Path("/var/capturas"), alias="CAPTURAS_DIR")
+    captura_max_bytes: int = Field(default=5 * 1024 * 1024, alias="CAPTURA_MAX_BYTES")
+    capturas_por_mensaje: int = Field(default=3, alias="CAPTURAS_POR_MENSAJE")
+    capturas_retencion_dias: int = Field(default=30, alias="CAPTURAS_RETENCION_DIAS")  # 0 = no purgar
+    # Límite de solicitudes por persona y minuto (0 = sin límite)
+    limite_chat_por_min: int = Field(default=20, alias="LIMITE_CHAT_POR_MIN")
+    limite_post_por_min: int = Field(default=60, alias="LIMITE_POST_POR_MIN")
+
+    # F9: reportes de la evaluación (los escribe `python -m evaluacion.ejecutar`; los lee /api/metricas)
+    evaluacion_dir: Path = Field(default=Path("/var/evaluacion"), alias="EVALUACION_DIR")
+
     # Seguridad / límites
     origenes_cors: str = Field(default="http://localhost:5173", alias="ORIGENES_CORS")
     max_caracteres_mensaje: int = Field(default=4000, alias="MAX_CARACTERES_MENSAJE")

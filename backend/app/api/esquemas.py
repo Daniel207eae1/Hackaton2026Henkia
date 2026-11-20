@@ -36,6 +36,13 @@ class PeticionChat(BaseModel):
                 return "\n".join(p.text or "" for p in m.parts if p.type == "text").strip()
         return ""
 
+    def archivos_usuario(self) -> list[dict[str, Any]]:
+        """Partes `file` (capturas, data URL) del ÚLTIMO mensaje del usuario."""
+        for m in reversed(self.messages):
+            if m.role == "user":
+                return [p.model_dump() for p in m.parts if p.type == "file"]
+        return []
+
 
 class PersonaSalida(BaseModel):
     id: str

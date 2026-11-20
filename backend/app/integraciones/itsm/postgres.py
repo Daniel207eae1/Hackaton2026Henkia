@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -44,7 +45,14 @@ ESTADO_ACCION = {
     "expirada": "rechazada",
     "propuesta": "propuesta",
 }
-TIPO_BANDERA = {"inyeccion": "inyeccion", "autoridad": "ingenieria_social", "identidad": "fuera_alcance"}
+TIPO_BANDERA = {
+    "inyeccion": "inyeccion",
+    "inyeccion_en_captura": "inyeccion",
+    "autoridad": "ingenieria_social",
+    "identidad": "fuera_alcance",
+}
+ORIGEN_BANDERA = {"inyeccion_en_captura": "captura"}
+APPS_BD = {"outlook", "teams", "excel", "word", "onedrive", "impresora", "office", "windows"}
 
 
 def _hash(texto: str) -> str:
@@ -63,7 +71,7 @@ class RepositorioITSMPostgres:
         cid = uuid_del_caso(estado["case_id"])
         estado_caso, resultado = estado_bd(estado)
         async with self._pool.connection() as c, c.transaction():
-            await c.execute(
+            cur = await c.execute(
                 """
                 insert into operacion.casos (id, usuario_id, equipo_id, canal, estado, resultado, estado_caso,
                                              cerrado_en)
@@ -71,6 +79,8 @@ class RepositorioITSMPostgres:
                 on conflict (id) do update set estado = excluded.estado, resultado = excluded.resultado,
                     estado_caso = excluded.estado_caso,
                     cerrado_en = coalesce(operacion.casos.cerrado_en, excluded.cerrado_en)
+                where operacion.casos.usuario_id = excluded.usuario_id
+                returning id
                 """,
                 (
                     cid,
@@ -82,6 +92,9 @@ class RepositorioITSMPostgres:
                     resultado,
                 ),
             )
+            if await cur.fetchone() is None:
+                # El id ya es de un caso de OTRA persona: no se toca nada de ese registro.
+                raise PermissionError(f"El caso {estado['case_id']} pertenece a otra persona en el registro")
             await self._eventos(c, cid, estado.get("linea_tiempo") or [])
             await self._mensajes(c, cid, estado.get("mensajes") or [])
             await self._acciones(c, cid, estado)
@@ -89,6 +102,48 @@ class RepositorioITSMPostgres:
             if ficha := estado.get("escalamiento"):
                 await self._escalamiento(c, cid, ficha, traza_url)
             await self._masivo(c, cid, estado.get("masivo") or {})
+            await self._capturas(c, cid, estado.get("capturas") or [])
+
+    async def _capturas(self, c, cid, capturas: list[dict[str, Any]]) -> None:
+        """F7: una fila por captura (solo campos validados; el texto de la imagen nunca se guarda)."""
+        cur = await c.execute("select sha256 from operacion.capturas where caso_id = %s", (cid,))
+        guardadas = {r[0] for r in await cur.fetchall()}
+        for k in capturas:
+            if not k.get("sha256") or k["sha256"] in guardadas:
+                continue
+            extraccion = {
+                x: k.get(x)
+                for x in (
+                    "aplicacion",
+                    "codigo_error",
+                    "codigo_modelo",
+                    "codigos_ocr",
+                    "coinciden",
+                    "bandera_heuristica",
+                    "bandera_modelo",
+                    "motivo",
+                )
+            }
+            await c.execute(
+                """insert into operacion.capturas (caso_id, nombre_archivo, ruta_almacen, mime, tamano_bytes, sha256,
+                       estado, aplicacion, codigo_error, extraccion, contiene_instrucciones, fragmento_sospechoso,
+                       subida_en, procesada_en)
+                   values (%s, %s, %s, 'image/png', %s, %s, %s, %s, %s, %s, %s, %s, %s, now())""",
+                (
+                    cid,
+                    k.get("nombre"),
+                    k.get("ruta") or "",
+                    max(1, int(k.get("tamano_bytes") or 1)),
+                    k["sha256"],
+                    k.get("estado") if k.get("estado") in ("procesada", "no_concluyente", "rechazada") else "procesada",
+                    k.get("aplicacion") if k.get("aplicacion") in APPS_BD else None,
+                    k.get("codigo_error"),
+                    _json(extraccion),
+                    bool(k.get("contiene_instrucciones")),
+                    k.get("fragmento_sospechoso"),
+                    k.get("hora"),
+                ),
+            )
 
     async def _masivo(self, c, cid, m: dict[str, Any]) -> None:
         """F2: el reporte queda ligado al caso; el caso, vinculado (y suscrito) al incidente masivo."""
@@ -223,8 +278,8 @@ class RepositorioITSMPostgres:
             tipo = TIPO_BANDERA.get(nombre, "accion_prohibida" if ":" in nombre else "ingenieria_social")
             await c.execute(
                 "insert into operacion.banderas_seguridad (caso_id, tipo, origen, fragmento, intento, detectado_en) "
-                "values (%s, %s, 'mensaje_usuario', %s, %s, %s)",
-                (cid, tipo, nombre, b.get("turno") or 1, b.get("hora")),
+                "values (%s, %s, %s, %s, %s, %s)",
+                (cid, tipo, ORIGEN_BANDERA.get(nombre, "mensaje_usuario"), nombre, b.get("turno") or 1, b.get("hora")),
             )
 
     async def _escalamiento(self, c, cid, ficha: dict[str, Any], traza_url: str | None) -> None:
@@ -241,6 +296,76 @@ class RepositorioITSMPostgres:
                 ficha["ans"].get("vence_en"),
             ),
         )
+
+    async def cargar_estado(self, case_id: str) -> dict[str, Any] | None:
+        """Estado del caso tal como quedó al final de su último turno (para rehidratar el grafo tras un reinicio).
+
+        `estado_caso` guarda todo menos los mensajes; estos salen de `operacion.mensajes` (los del historial, que
+        nunca llevan texto externo: ver `sin_cita` y `nodos_captura`)."""
+        cid = uuid_del_caso(case_id)
+        async with self._pool.connection() as c, c.cursor(row_factory=dict_row) as cur:
+            await cur.execute("select estado_caso from operacion.casos where id = %s", (cid,))
+            fila = await cur.fetchone()
+            if not fila or not fila["estado_caso"]:
+                return None
+            await cur.execute(
+                "select rol, contenido, creado_en from operacion.mensajes where caso_id = %s order by id", (cid,)
+            )
+            mensajes = [
+                {
+                    "rol": "usuario" if m["rol"] == "usuario" else "sistema",
+                    "texto": m["contenido"],
+                    "hora": m["creado_en"].isoformat(timespec="seconds") if m["creado_en"] else None,
+                }
+                for m in await cur.fetchall()
+            ]
+        return {**fila["estado_caso"], "mensajes": mensajes}
+
+    async def registrar_valoracion(self, case_id: str, util: bool, comentario: str | None) -> bool:
+        """Valoración del usuario al cerrar o escalar: un hito `valoracion` (una sola por caso)."""
+        cid = uuid_del_caso(case_id)
+        async with self._pool.connection() as c, c.transaction():
+            cur = await c.execute("select 1 from operacion.eventos where caso_id = %s and nodo = 'valoracion'", (cid,))
+            if await cur.fetchone():
+                return False
+            await c.execute(
+                "insert into operacion.eventos (caso_id, tipo, nodo, actor, datos) "
+                "values (%s, 'hito', 'valoracion', 'usuario', %s)",
+                (cid, _json({"util": util, "comentario": comentario})),
+            )
+        return True
+
+    async def metricas(self, dias: int = 30) -> dict[str, Any]:
+        """Métricas operativas (§5.3) sobre el registro oficial de los últimos `dias`."""
+        async with self._pool.connection() as c, c.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                with k as (select * from operacion.casos where creado_en > now() - make_interval(days => %s))
+                select
+                  (select count(*) from k) as casos,
+                  (select count(*) from k where resultado = 'resuelto') as resueltos,
+                  (select count(*) from k where resultado = 'escalado') as escalados,
+                  (select count(*) from k where resultado = 'vinculado_masivo') as vinculados_masivo,
+                  (select coalesce(avg((estado_caso->'metricas'->>'preguntas')::numeric), 0) from k)
+                    as preguntas_promedio,
+                  (select count(*) from operacion.acciones a join k on k.id = a.caso_id
+                     where a.estado = 'ejecutada' and not exists (select 1 from operacion.tokens_consentimiento t
+                       where t.accion_ref = a.id and t.estado = 'consumido')
+                       and a.politica <> 'aprobacion_n2') as acciones_sin_token,
+                  (select count(*) from operacion.banderas_seguridad b join k on k.id = b.caso_id) as banderas,
+                  (select count(*) from operacion.escalamientos e join k on k.id = e.caso_id
+                     where e.completo_sin_repregunta) as escalamientos_completos,
+                  (select count(*) from operacion.escalamientos e join k on k.id = e.caso_id
+                     where e.completo_sin_repregunta is not null) as escalamientos_evaluados,
+                  (select count(*) from operacion.eventos v join k on k.id = v.caso_id
+                     where v.nodo = 'valoracion') as valoraciones,
+                  (select count(*) from operacion.eventos v join k on k.id = v.caso_id
+                     where v.nodo = 'valoracion' and (v.datos->>'util')::boolean) as valoraciones_utiles
+                """,
+                (dias,),
+            )
+            f = await cur.fetchone()
+        return {k: float(v) if isinstance(v, Decimal) else v for k, v in f.items()}
 
     async def listar_escalamientos(self) -> list[dict[str, Any]]:
         async with self._pool.connection() as c, c.cursor(row_factory=dict_row) as cur:

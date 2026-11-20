@@ -1,10 +1,11 @@
-import { FlaskConical } from "lucide-react";
-import type { ReactNode } from "react";
+import { FlaskConical, Monitor, Moon, Sun } from "lucide-react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
-import { Badge } from "@/components/ui/badge";
+import isotipo from "@/assets/isotipo.svg";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Rol } from "@/lib/api";
+import { useTema, type Tema } from "@/lib/tema";
 import { cn } from "@/lib/utils";
 import { useVerComo } from "@/lib/ver-como";
 
@@ -22,41 +23,85 @@ const NAVEGACION: { a: string; texto: string; roles: Rol[] }[] = [
   { a: "/metricas", texto: "Métricas", roles: ["n2", "revisor_kb"] },
 ];
 
+const TEMA: Record<Tema, { icono: typeof Sun; texto: string }> = {
+  sistema: { icono: Monitor, texto: "Tema: según el sistema" },
+  claro: { icono: Sun, texto: "Tema: claro" },
+  oscuro: { icono: Moon, texto: "Tema: oscuro" },
+};
+
+/** Publica la altura real de la barra en `--alto-barra` para que el chat quepa en la pantalla sin pasarla. */
+function useAltoBarra() {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const raiz = document.documentElement;
+    const obs = new ResizeObserver(() => raiz.style.setProperty("--alto-barra", `${el.offsetHeight}px`));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return ref;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { personas, persona, elegir } = useVerComo();
   const roles = [...new Set(personas.map((p) => p.rol))];
+  const { tema, siguiente } = useTema();
+  const { icono: IconoTema, texto: textoTema } = TEMA[tema];
+  const barra = useAltoBarra();
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:p-2">
+      <a
+        href="#contenido"
+        className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+      >
         Saltar al contenido
       </a>
-      <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-2">
-          <span className="font-semibold">Soporte de ofimática</span>
-          <Badge variant="outline" className="gap-1 border-amber-600 text-amber-800" role="status">
+      {/* Barra inicial sólida de la marca (#00170C) en ambos modos. */}
+      <header ref={barra} className="sticky top-0 z-40 border-b border-white/10 bg-brand-dark text-white shadow-sm">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <img src={isotipo} alt="" className="h-8 w-auto drop-shadow" />
+            <div className="leading-none">
+              <span className="block font-display text-2xl font-semibold tracking-wide">Soporte de ofimática</span>
+              <span className="block text-[0.7rem] tracking-wide text-brand-sky">Mesa de ayuda · Henkia</span>
+            </div>
+          </div>
+          <span
+            role="status"
+            className="inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-0.5 text-xs font-medium text-amber-200"
+          >
             <FlaskConical className="size-3" aria-hidden /> Modo demostración
-          </Badge>
-          <nav aria-label="Vistas" className="flex flex-wrap gap-1">
+          </span>
+          <nav aria-label="Vistas" className="order-last flex w-full gap-1 overflow-x-auto md:order-none md:w-auto">
             {NAVEGACION.filter((n) => persona && n.roles.includes(persona.rol)).map((n) => (
               <NavLink
                 key={n.a}
                 to={n.a}
                 end
                 className={({ isActive }) =>
-                  cn("rounded-md px-2 py-1 text-sm hover:bg-accent", isActive && "bg-accent font-medium")
+                  cn(
+                    "rounded-full px-3 py-1 text-sm whitespace-nowrap text-white/80 transition-colors hover:bg-white/10 hover:text-white",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-green-bright",
+                    isActive && "bg-brand-green-bright font-medium text-brand-dark hover:bg-brand-green-bright hover:text-brand-dark",
+                  )
                 }
               >
                 {n.texto}
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <label htmlFor="ver-como" className="text-sm text-muted-foreground">
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <label htmlFor="ver-como" className="hidden text-sm text-white/75 sm:inline">
               Ver como
             </label>
             <Select value={persona?.id ?? ""} onValueChange={elegir}>
-              <SelectTrigger id="ver-como" className="w-72" aria-label="Ver como">
+              <SelectTrigger
+                id="ver-como"
+                className="w-52 border-white/20 bg-white/5 text-white hover:bg-white/10 sm:w-72 dark:bg-white/5 dark:hover:bg-white/10 [&_svg]:text-white/70!"
+                aria-label="Ver como"
+              >
                 <SelectValue placeholder="Elige una persona" />
               </SelectTrigger>
               <SelectContent>
@@ -74,10 +119,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                 ))}
               </SelectContent>
             </Select>
+            <button
+              type="button"
+              onClick={siguiente}
+              aria-label={`${textoTema}. Cambiar tema`}
+              title={`${textoTema} (clic para cambiar)`}
+              className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/20 text-white/85 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-brand-green-bright"
+            >
+              <IconoTema className="size-4" aria-hidden />
+            </button>
           </div>
         </div>
+        <div className="degradado-marca h-0.5 w-full opacity-80" aria-hidden />
       </header>
-      <main id="contenido" className="mx-auto w-full max-w-7xl flex-1 px-4 py-4">
+      <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 py-4 outline-none">
         {children}
       </main>
     </div>

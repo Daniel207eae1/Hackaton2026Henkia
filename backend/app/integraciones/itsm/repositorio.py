@@ -8,6 +8,7 @@ banderas de seguridad y escalamientos. Langfuse es observabilidad; esto es el re
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any, Protocol
 
@@ -34,12 +35,17 @@ ESTADO_POR_ETAPA = {
 }
 
 
+_HEX32 = re.compile(r"[0-9a-f]{32}")
+
+
 def uuid_del_caso(case_id: str) -> uuid.UUID:
-    """El id del chat (32 hex) es un UUID; cualquier otro se mapea de forma estable con uuid5."""
-    try:
+    """El id del chat (32 hex en minúscula, sin guiones) es un UUID; cualquier otro se mapea con uuid5.
+
+    Solo la forma CANÓNICA se lee como hex: `uuid.UUID` acepta mayúsculas, guiones y llaves, y así dos `case_id`
+    distintos (`abc…` y `ABC…`) caerían en el mismo caso de la BD (hallazgo de seguridad: pisar un caso ajeno)."""
+    if _HEX32.fullmatch(case_id):
         return uuid.UUID(hex=case_id)
-    except ValueError:
-        return uuid.uuid5(_NS, case_id)
+    return uuid.uuid5(_NS, case_id)
 
 
 def estado_bd(estado: dict[str, Any]) -> tuple[str, str | None]:
@@ -64,6 +70,8 @@ class RepositorioITSM(Protocol):
 
     async def evaluar_escalamiento(self, escalamiento_id: int, completo: bool) -> dict[str, Any] | None: ...
 
+    async def cargar_estado(self, case_id: str) -> dict[str, Any] | None: ...
+
 
 class RepositorioITSMMemoria:
     """Doble en memoria (pruebas y ejecución sin BD)."""
@@ -71,6 +79,7 @@ class RepositorioITSMMemoria:
     def __init__(self) -> None:
         self.casos: dict[str, dict[str, Any]] = {}
         self.escalamientos: dict[int, dict[str, Any]] = {}
+        self.valoraciones: dict[str, dict[str, Any]] = {}
 
     async def sincronizar(self, estado: dict[str, Any], traza_url: str | None = None) -> None:
         case_id = estado["case_id"]
@@ -94,6 +103,37 @@ class RepositorioITSMMemoria:
                 "completo_sin_repregunta": None,
                 "creado_en": ficha.get("creado_en"),
             }
+
+    async def cargar_estado(self, case_id: str) -> dict[str, Any] | None:
+        caso = self.casos.get(case_id)
+        return dict(caso["estado_caso"]) if caso else None
+
+    async def registrar_valoracion(self, case_id: str, util: bool, comentario: str | None) -> bool:
+        if case_id in self.valoraciones:
+            return False
+        self.valoraciones[case_id] = {"util": util, "comentario": comentario}
+        return True
+
+    async def metricas(self, dias: int = 30) -> dict[str, Any]:
+        resultados = [c["resultado"] for c in self.casos.values()]
+        preguntas = [((c["estado_caso"].get("metricas") or {}).get("preguntas") or 0) for c in self.casos.values()]
+        return {
+            "casos": len(resultados),
+            "resueltos": resultados.count("resuelto"),
+            "escalados": resultados.count("escalado"),
+            "vinculados_masivo": resultados.count("vinculado_masivo"),
+            "preguntas_promedio": sum(preguntas) / len(preguntas) if preguntas else 0,
+            "acciones_sin_token": 0,
+            "banderas": sum(
+                len((c["estado_caso"].get("seguridad") or {}).get("banderas") or []) for c in self.casos.values()
+            ),
+            "escalamientos_completos": sum(1 for e in self.escalamientos.values() if e["completo_sin_repregunta"]),
+            "valoraciones": len(self.valoraciones),
+            "valoraciones_utiles": sum(1 for v in self.valoraciones.values() if v["util"]),
+            "escalamientos_evaluados": sum(
+                1 for e in self.escalamientos.values() if e["completo_sin_repregunta"] is not None
+            ),
+        }
 
     async def listar_escalamientos(self) -> list[dict[str, Any]]:
         return sorted(self.escalamientos.values(), key=lambda e: e["id"], reverse=True)

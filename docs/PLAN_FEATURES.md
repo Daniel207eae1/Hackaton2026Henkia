@@ -204,6 +204,10 @@ Total estimado: **100 h**.
 
 ## F7 · Módulo B: capturas (R8)
 
+> **Estado (2026-11-19): hecha** (ADR 0015). Adjuntos en el chat → saneamiento (tipo real, píxeles, sin metadatos) → OCR
+> (Tesseract) + visión en cuarentena (esquema cerrado) → código válido solo si coinciden; instrucciones → bandera visible e
+> ignorada. Escenario 12 verificado en vivo y en el navegador. **Pendiente:** prompt de visión en Langfuse, dataset de capturas (F9).
+
 - **Criterios de aceptación:**
   1. Adjuntar imágenes en el chat (PromptInput con adjuntos); saneamiento (tipo, tamaño, sin metadatos).
   2. OCR determinista + modelo de visión **en cuarentena** con esquema cerrado (`aplicacion`, `codigo_error`, `mensaje_resumido`, `contiene_instrucciones`, `fragmento_sospechoso`).
@@ -219,6 +223,12 @@ Total estimado: **100 h**.
 
 ## F8 · Módulo A: curador de KB + revisor (R7)
 
+> **Estado (2026-11-19): hecha** (ADR 0016). Detección en código (faltante ≥ 3 casos sin artículo; desactualizado por versión
+> o antigüedad), tickets en cuarentena, borrador con esquema cerrado y casos de respaldo, escritura solo en `propuestas_kb`,
+> vista del revisor (Publicar / Devolver con comentario). En vivo: el faltante y las 2 correcciones del kit.
+> **Publicación en la KB (ADR 0019): hecha.** P2 aplicó `conocimiento.publicar_propuesta`. Verificado en vivo en una
+> transacción revertida: una propuesta queda como `KB-SIM-031`, embebida y encontrable por `buscar_hibrido`.
+
 - **Criterios de aceptación:**
   1. Lote: agrupa casos resueltos; grupo ≥ k sin artículo = faltante; contradicción o versión vieja = desactualizado.
   2. Borradores con los `case_id` que los respaldan; tickets pasan por la cuarentena.
@@ -231,6 +241,10 @@ Total estimado: **100 h**.
 - **Estimación:** 8 h.
 
 ## F9 · Evaluación, métricas y costo
+
+> **Estado (2026-11-19): hecha** (ADR 0017). Corrida completa con BD: 16/16 + lote del Módulo A. `python -m evaluacion.ejecutar`: guiones del
+> jurado + red team en proceso, equipo simulado (nunca el MCP real), usuario simulado, métricas §5.3, costo por agente,
+> `ultimo.json` → vista Métricas (+ operación real del ITSM). En vivo sin BD: 11/12 → hallazgo en la guardia corregido.
 
 - **Criterios de aceptación:**
   1. Usuario simulado juega los 15+ guiones (proceso aparte, rol `evaluador`).

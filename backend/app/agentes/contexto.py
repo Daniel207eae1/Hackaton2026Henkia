@@ -372,8 +372,10 @@ ETIQUETAS_SLOTS = {
     "onedrive_en_ejecucion": "OneDrive en ejecución",
     "cola_trabajos": "Trabajos en la cola de impresión",
     "perfil_outlook_estado": "Estado del perfil de Outlook",
+    "codigo_error": "Código de error (validado de la captura o escrito por el usuario)",
 }
 ETIQUETAS_SINTOMA = {
+    "descripcion_usuario": "Problema que reportó al inicio (sus palabras)",
     "aplicacion": "Aplicación",
     "tipo_sintoma": "Tipo de síntoma",
     "que_ve": "Lo que ve (según el usuario)",
@@ -401,6 +403,15 @@ def anomalias(slots: dict[str, dict[str, Any]]) -> list[str]:
     return out
 
 
+NIVEL_TECNICO = {
+    "bajo": "Nivel técnico del usuario: BAJO. Frases cortas, cero jerga (nada de 'caché', 'perfil', 'OST'); "
+    "explica qué va a notar, no cómo funciona por dentro; un paso a la vez.",
+    "medio": "Nivel técnico del usuario: MEDIO. Lenguaje claro; puedes nombrar menús y opciones de Office.",
+    "alto": "Nivel técnico del usuario: ALTO. Sé directo y conciso; puedes usar términos técnicos (caché, perfil, "
+    "versión, registros) sin explicarlos.",
+}
+
+
 def resumen_para_conversacional(
     slots: dict[str, dict[str, Any]], fallidas: list[str], sintoma: dict[str, Any] | None = None
 ) -> str:
@@ -414,7 +425,10 @@ def resumen_para_conversacional(
             if sintoma.get(k) not in (None, "", "desconocida", "desconocido")
         ]
         if entendido:
-            partes.append("Lo que ya entendiste del problema (no lo vuelvas a preguntar):\n" + "\n".join(entendido))
+            partes.append(
+                "Lo que ya entendiste del problema (NO vuelvas a preguntar cuál es el problema ni estos datos):\n"
+                + "\n".join(entendido)
+            )
     lineas = [
         f"- {ETIQUETAS_SLOTS[k]}: {v['valor']}"
         for k, v in slots.items()

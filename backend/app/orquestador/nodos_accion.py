@@ -308,8 +308,8 @@ class FlujoAccion:
                 self._decir(
                     escribir,
                     (
-                        f"Te propongo: {c.nombre.lower()}. {c.descripcion} "
-                        f"{c.aviso_obligatorio} {c.reversion}\n"
+                        # Qué hace, el aviso y la reversión ya están en la tarjeta: aquí no se repiten.
+                        f"Te propongo {c.nombre[:1].lower()}{c.nombre[1:]} (revisa los detalles en la tarjeta).\n"
                         "Te apareció una ventana de «Soporte TI» en tu equipo: "
                         "pulsa «Autorizar» si estás de acuerdo "
                         "o «Rechazar» si prefieres no hacerlo."

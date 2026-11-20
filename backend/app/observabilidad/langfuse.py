@@ -132,6 +132,17 @@ def score_por_traza(traza_url: str | None, nombre: str, valor: float, comentario
     lf.create_score(name=nombre, value=valor, trace_id=trace_id, comment=comentario)
 
 
+def score_por_sesion(session_id: str, nombre: str, valor: float, comentario: str | None = None) -> None:
+    """Score de todo el caso (p. ej., la valoración del usuario al cerrar o escalar)."""
+    lf = obtener_langfuse()
+    if lf is None:
+        return
+    try:
+        lf.create_score(name=nombre, value=valor, session_id=session_id, comment=comentario)
+    except Exception:  # noqa: BLE001 - Langfuse nunca bloquea
+        log.warning("No pude registrar el score %s", nombre, exc_info=True)
+
+
 def url_traza_actual(ajustes: Ajustes | None = None) -> str | None:
     lf = obtener_langfuse()
     if lf is None:

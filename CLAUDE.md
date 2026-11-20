@@ -44,6 +44,10 @@ docker compose --profile zabbix up --build
 cd backend; python -m pip install -e ".[dev]"; pytest; ruff check .; ruff format --check .
 # Prompts → Langfuse (staging; --production promueve la versión probada)
 docker compose exec -e PYTHONPATH=/app api python scripts/sincronizar_prompts.py
+# Evaluación (F9): guiones del jurado + red team, en proceso, con equipo simulado (nunca el MCP real)
+docker compose exec api python -m evaluacion.ejecutar            # o --solo esc06,rt01 · --sin-langfuse
+# Lote del curador de KB (F8)
+docker compose exec api python -m app.agentes.curador_kb
 # Frontend
 cd frontend; npm ci; npm run test; npm run lint; npm run typecheck; npm run build
 ```

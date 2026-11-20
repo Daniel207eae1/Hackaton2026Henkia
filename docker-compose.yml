@@ -23,6 +23,9 @@ services:
       - ./backend/app:/app/app:ro
       - ./backend/config:/app/config:ro
       - ./backend/scripts:/app/scripts:ro
+      - capturas:/var/capturas  # imágenes YA saneadas (F7); nunca se sirven por HTTP
+      - ./backend/evaluacion:/app/evaluacion:ro
+      - evaluacion:/var/evaluacion  # reportes de F9 (los lee /api/metricas)
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       - db-tunel
@@ -115,3 +118,5 @@ services:
 volumes:
   zabbix-db:
   ollama-modelos:
+  capturas:
+  evaluacion:

@@ -43,6 +43,7 @@ AI Elements anunció su paso a shadcn/ui (fin de nov. 2026). El código ya está
   (`PartesDatos`) y un componente en `src/components/caso/`.
 
 ## Reglas
+- Capturas (F7): `PromptInput` con `accept`/`maxFiles`/`maxFileSize`; `components/caso/capturas.tsx` (botón, lista, tarjeta). El transporte manda solo el último mensaje.
 - **Consentimiento y aprobación = botón → `POST` a su endpoint** (F4), nunca `sendMessage`.
   Los textos de la tarjeta (qué hará, aviso, reversión, riesgo) vienen del backend tal cual.
 - Texto del backend: siempre como texto de React (escapado). ESLint bloquea `dangerouslySetInnerHTML`.
@@ -56,4 +57,3 @@ AI Elements anunció su paso a shadcn/ui (fin de nov. 2026). El código ya está
 
 ## Pendientes conocidos
 - Bundle de ~2 MB por Streamdown (Mermaid, KaTeX) arrastrado por `message.tsx`: dividir con `import()` en F9.
-- En F7, `PromptInput` con adjuntos (`accept="image/png,image/jpeg"`, `maxFileSize`) + componente `attachments`.

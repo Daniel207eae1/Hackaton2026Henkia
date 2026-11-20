@@ -28,6 +28,10 @@ CONSULTABLES: dict[str, list[str]] = {
         r"onedrive (esta|se esta|sigue) (abierto|corriendo|ejecut|activo|iniciado)",
         r"(tienes|esta) (abierto|iniciado) (el )?onedrive",
     ],
+    "codigo_error": [
+        r"codigo de(l)? error",
+        r"(que|cual(es)?) (es el |son los )?(mensaje|codigo)s? de error",
+    ],
     "cola_trabajos": [
         r"cola de impresion",
         r"trabajos (pendientes|en cola)",
@@ -113,4 +117,10 @@ class FiltroPreguntas:
 
 
 def disponibles_desde_slots(slots: dict[str, dict]) -> set[str]:
-    return {k for k, v in slots.items() if v.get("origen") == "telemetria" and v.get("valor") is not None}
+    # Consultable = lo leyó el sistema (telemetría) o ya está validado (código de una captura o escrito).
+    return {
+        k
+        for k, v in slots.items()
+        if v.get("valor") is not None
+        and (v.get("origen") == "telemetria" or (k == "codigo_error" and v.get("origen") in ("captura", "usuario")))
+    }

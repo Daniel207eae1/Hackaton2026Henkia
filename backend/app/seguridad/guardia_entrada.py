@@ -27,13 +27,15 @@ def _normalizar(texto: str) -> str:
 
 
 _INYECCION = [
-    r"ignor\w* (todas |tus |las |sus )?(instrucciones|reglas|indicaciones)",
+    r"ignor\w* (?:(?:todas|todos|tus|las|sus|mis|estas|esas|previas|anteriores) )*(instrucciones|reglas|indicaciones)",
     r"olvida\w* (todo|tus instrucciones|tus reglas)",
     r"\b(system|assistant|developer)\s*:",
     r"\beres ahora\b|\bahora eres\b|\bactua como\b",
     r"modo (desarrollador|administrador|dios|sin restricciones|developer)",
     r"\bjailbreak\b|\bdan mode\b",
-    r"(muestrame|dime|revela|repite) (tus|el|las) (instrucciones|prompt|reglas internas)",
+    r"(muestrame|dime|revela|repite|imprime|copia) (?:(?:tu|tus|el|las|su|sus|todo|todas) )*"
+    r"(instrucciones|prompt|reglas internas)",
+    r"prompt (de|del) sistema",
     r"[A-Za-z0-9+/]{120,}={0,2}",  # bloque largo tipo base64
 ]
 _AUTORIDAD = [

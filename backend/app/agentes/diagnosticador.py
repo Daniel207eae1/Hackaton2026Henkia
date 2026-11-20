@@ -16,6 +16,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.agentes.contexto import LICENCIA_OK, UMBRAL_DISCO_GB
+from app.agentes.prompts import prompt_embebido, prompt_vigente
 from app.llm.puerto import Mensaje
 from app.llm.registro import RegistroLLM, SinModeloDisponible
 from app.observabilidad.langfuse import evento, observacion
@@ -73,7 +74,7 @@ EVIDENCIA_POR_HERRAMIENTA: dict[str, list[str]] = {
     "telemetria.audio": ["teams_audio", "teams_dispositivosAudio_cantidad"],
 }
 PERFIL_DANADO = {"sin-perfil", "predeterminado-inexistente", "sin-predeterminado", "sin-cuentas"}
-_ERR = re.compile(r"ERR-SIM-\d{4}")
+_ERR = re.compile(r"ERR-SIM-[0-9A-F]{4}")
 MAX_RONDAS = 4  # presupuesto del ciclo (§3.5): luego se escala
 
 
@@ -84,6 +85,9 @@ def categoria_por_sintoma(aplicacion: str | None, tipo: str | None) -> str | Non
 def evidencia_estructurada(slots: dict[str, dict[str, Any]], extraccion: dict[str, Any] | None) -> dict[str, Any]:
     """Solo campos tipados y saneados. Nunca texto crudo."""
     ev = {k: v.get("valor") for k, v in slots.items() if v.get("valor") is not None}
+    cod = slots.get("codigo_error") or {}
+    if cod.get("origen") == "usuario" and not cod.get("corroborado"):
+        ev["codigo_error_sin_corroborar"] = True
     libre, usado = ev.get("disco_libre_gb"), ev.get("disco_usado_gb")
     if isinstance(libre, int | float) and isinstance(usado, int | float) and libre + usado > 0:
         ev["disco_uso_pct"] = round(100 * usado / (libre + usado), 1)
@@ -145,6 +149,13 @@ def _regla(h: Hipotesis, ev: dict[str, Any]) -> tuple[str, str, list[str]] | Non
         return "confirmada", f"Perfil de Outlook: {ev['perfil_outlook_estado']}", ["perfil_outlook_estado"]
     # Criterio por código de error en los logs (anclado por el extractor).
     esperados = _ERR.findall(h.receta.get("criterio_confirmacion") or "")
+    # Código validado de una captura (OCR + visión coinciden) o escrito por el usuario: confirma si es el esperado.
+    # Su AUSENCIA no descarta nada (una captura muestra un solo error; el registro completo está en los logs).
+    if esperados and ev.get("codigo_error") in esperados:
+        if ev.get("codigo_error_sin_corroborar"):
+            # Lo escribió el usuario y ninguna captura lo respalda: no basta para confirmar (falta evidencia).
+            return "no_concluyente", f"{ev['codigo_error']} lo indicó el usuario; falta corroborarlo", ["codigo_error"]
+        return "confirmada", f"{ev['codigo_error']} en la captura (validado)", ["codigo_error"]
     if esperados and "logs.codigos_error" in ev:
         if ev.get("logs.no_concluyente") and not ev["logs.codigos_error"]:
             return "no_concluyente", "No se pudo leer bien el registro", ["logs.no_concluyente"]
@@ -166,12 +177,7 @@ class Evaluaciones(BaseModel):
     evaluaciones: list[EvaluacionHipotesis]
 
 
-PROMPT_DIAGNOSTICO = (
-    "Eres el diagnosticador de una mesa de servicio de ofimática. Recibes hipótesis con su criterio de confirmación "
-    "y de descarte, y la EVIDENCIA ESTRUCTURADA ya consultada (clave: valor). Para cada hipótesis decide "
-    "confirmada, descartada o no_concluyente SOLO con esa evidencia y cita las claves que usaste. Si la evidencia "
-    "no alcanza para el criterio, responde no_concluyente. No inventes datos ni claves."
-)
+PROMPT_DIAGNOSTICO = prompt_embebido("agente_diagnosticador")  # versión vigente: Langfuse (`agente_diagnosticador`)
 
 
 class Diagnosticador:
@@ -199,8 +205,9 @@ class Diagnosticador:
             f"Descarta si: {h.receta.get('criterio_descarte')}"
             for h in hs
         )
+        sistema, prompt_lf = prompt_vigente("agente_diagnosticador")
         mensajes = [
-            Mensaje("system", PROMPT_DIAGNOSTICO),
+            Mensaje("system", sistema),
             Mensaje(
                 "user",
                 f"Hipótesis:\n{lineas}\n\nEvidencia:\n" + "\n".join(f"- {k}: {v}" for k, v in relevantes.items()),
@@ -210,7 +217,7 @@ class Diagnosticador:
             "agente_diagnosticador", tipo="agent", input={"hipotesis": [h.articulo_id for h in hs]}
         ) as obs:
             try:
-                r = await self._cliente.estructurado(mensajes, Evaluaciones)
+                r = await self._cliente.estructurado(mensajes, Evaluaciones, prompt=prompt_lf)
             except SinModeloDisponible as err:
                 evento("llm.sin_modelo", metadata={"agente": "diagnosticador", "error": str(err)[:200]})
                 return

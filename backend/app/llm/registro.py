@@ -35,6 +35,9 @@ T = TypeVar("T", bound=BaseModel)
 # Modelo elegido en el selector de la página para ESTA petición (solo modo demo; lo fija la API).
 # Va primero en la cadena de cada agente que pueda usarlo; los demás agentes siguen con su cadena.
 modelo_preferido: ContextVar[str | None] = ContextVar("modelo_preferido", default=None)
+# Contabilidad de uso (F9): si el evaluador fija una lista, cada llamada exitosa agrega su consumo y su costo de
+# referencia. En la API normal queda en None (el costo real va a Langfuse).
+contabilidad: ContextVar[list[dict[str, Any]] | None] = ContextVar("contabilidad", default=None)
 
 
 class SinModeloDisponible(Exception):
@@ -45,6 +48,21 @@ def _costo(modelo: ConfigModelo, uso: Uso) -> dict[str, float]:
     entrada = (modelo.precio_entrada_1m or 0.0) * uso.tokens_entrada / 1_000_000
     salida = (modelo.precio_salida_1m or 0.0) * uso.tokens_salida / 1_000_000
     return {"input": entrada, "output": salida}
+
+
+def _contabilizar(agente: str, modelo: ConfigModelo, uso: Uso) -> None:
+    registro = contabilidad.get()
+    if registro is not None:
+        c = _costo(modelo, uso)
+        registro.append(
+            {
+                "agente": agente,
+                "modelo": modelo.alias,
+                "tokens_entrada": uso.tokens_entrada,
+                "tokens_salida": uso.tokens_salida,
+                "costo_usd": c["input"] + c["output"],
+            }
+        )
 
 
 def _uso_lf(uso: Uso) -> dict[str, int]:
@@ -110,7 +128,7 @@ class ClienteAgente:
                     self.agente.nombre,
                     tipo="generation",
                     model=modelo.id,
-                    input=[{"role": m.rol, "content": m.contenido} for m in mensajes],
+                    input=_para_traza(mensajes),
                     model_parameters={k: str(v) for k, v in self._params(modelo).items()},
                     prompt=prompt,
                     metadata={"alias": modelo.alias, "intento": str(intento)},
@@ -133,6 +151,7 @@ class ClienteAgente:
                             usage_details=_uso_lf(uso),
                             cost_details=_costo(modelo, uso),
                         )
+                        _contabilizar(self.agente.nombre, modelo, uso)
                         return
                     except ErrorLLM as err:
                         gen.update(level="ERROR", status_message=str(err)[:300])
@@ -179,7 +198,7 @@ class ClienteAgente:
                     self.agente.nombre,
                     tipo="generation",
                     model=modelo.id,
-                    input=[{"role": m.rol, "content": m.contenido} for m in msgs],
+                    input=_para_traza(msgs),
                     prompt=prompt,
                     metadata={"alias": modelo.alias},
                 ) as gen:
@@ -212,6 +231,7 @@ class ClienteAgente:
                         r = await proveedor.chat(modelo.id, [instruccion, *msgs], self._params(modelo))
                         crudo = r.texto
                     gen.update(output=crudo, usage_details=_uso_lf(r.uso), cost_details=_costo(modelo, r.uso))
+                    _contabilizar(self.agente.nombre, modelo, r.uso)
                     try:
                         return esquema.model_validate_json(_limpiar_json(crudo))
                     except ValidationError as exc:
@@ -236,6 +256,21 @@ class ClienteAgente:
                 return vectores
 
         return await self._con_fallback(llamada)
+
+
+def _para_traza(mensajes: list[Mensaje]) -> list[dict[str, Any]]:
+    """Entrada para Langfuse: las imágenes NUNCA se registran (privacidad y tamaño): solo un marcador."""
+
+    def parte(p: Any) -> Any:
+        if isinstance(p, dict) and p.get("type") == "image_url":
+            url = str((p.get("image_url") or {}).get("url", ""))
+            return {"type": "image_url", "image_url": "[imagen omitida en la traza]", "bytes_b64": len(url)}
+        return p
+
+    return [
+        {"role": m.rol, "content": [parte(p) for p in m.contenido] if isinstance(m.contenido, list) else m.contenido}
+        for m in mensajes
+    ]
 
 
 def _limpiar_json(texto: str) -> str:

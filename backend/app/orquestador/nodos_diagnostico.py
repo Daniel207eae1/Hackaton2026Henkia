@@ -15,6 +15,7 @@ Hipotesis (cada turno que haga falta):
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -44,6 +45,24 @@ def _ahora() -> str:
 
 def _hito(etapa: Etapa, detalle: str) -> dict[str, Any]:
     return {"hora": _ahora(), "etapa": etapa.value, "detalle": detalle}
+
+
+# Los artículos de P2 mezclan pasos del AGENTE («Consultar … en la telemetría», «Confirmar … en los registros») con
+# pasos del usuario («Guiar: Configuración > …»). Al usuario solo van los suyos, sin el prefijo «Guiar»; nada se
+# reescribe ni se inventa (§3.8).
+_PASO_INTERNO = re.compile(
+    r"telemetr|en los registros|en los logs|\(no pregunt|^\s*(consultar|comparar|confirmar|verificar en|revisar en)\b",
+    re.IGNORECASE,
+)
+_GUIAR = re.compile(r"^\s*guiar(\s+al\s+usuario)?(\s+para)?\s*:?\s*", re.IGNORECASE)
+_NUMERO = re.compile(r"^\s*\d+[.)]\s*")
+
+
+def pasos_para_usuario(pasos: str) -> str:
+    lineas = [_NUMERO.sub("", ln).strip() for ln in pasos.strip().splitlines() if ln.strip()]
+    utiles = [_GUIAR.sub("", ln).strip() for ln in lineas if not _PASO_INTERNO.search(ln)]
+    utiles = [u[:1].upper() + u[1:] for u in utiles if u]
+    return "\n".join(f"{i}. {u}" for i, u in enumerate(utiles, 1))
 
 
 def _a_hipotesis(d: dict[str, Any]) -> Hipotesis:
@@ -225,7 +244,7 @@ class FlujoDiagnostico:
         d = estado.get("diagnostico") or {}
         h = next(x for x in d.get("hipotesis", []) if x["articulo_id"] == d.get("confirmada"))
         secciones = await self.kb.secciones(h["articulo_id"])
-        pasos = (secciones.get("pasos") or "").strip()
+        pasos = pasos_para_usuario(secciones.get("pasos") or "")
         if not pasos or analizar(pasos).banderas:
             evento("kb.articulo_no_usable", metadata={"articulo": h["articulo_id"], "caso_id": estado["case_id"]})
             return {

@@ -1,6 +1,7 @@
 import { BookOpen } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { DatosFuentes, DatosHipotesis, EstadoHipotesis } from "@/lib/mensajes";
 import { cn } from "@/lib/utils";
 
@@ -43,14 +44,28 @@ export function PanelHipotesis({ datos }: { datos: DatosHipotesis | null }) {
 }
 
 /** Cita de la KB bajo una guía (no invención: los pasos salen de este artículo). */
-export function Fuentes({ datos }: { datos: DatosFuentes }) {
+/** Artículos citados. Tras una guía (la última del caso abierto) pregunta «¿ya te funciona?» con botones. */
+export function Fuentes({ datos, onConfirmar }: { datos: DatosFuentes; onConfirmar?: (texto: string) => void }) {
   return (
-    <ul aria-label="Fuentes" className="flex flex-wrap gap-2">
-      {datos.fuentes.map((f) => (
-        <li key={`${f.articulo_id}-${f.seccion}`} className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs">
-          <BookOpen className="size-3" aria-hidden /> {f.articulo_id} · {f.titulo}
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <ul aria-label="Fuentes" className="flex flex-wrap gap-2">
+        {datos.fuentes.map((f) => (
+          <li key={`${f.articulo_id}-${f.seccion}`} className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs">
+            <BookOpen className="size-3" aria-hidden /> {f.articulo_id} · {f.titulo}
+          </li>
+        ))}
+      </ul>
+      {onConfirmar && (
+        <div role="group" aria-label="¿Ya te funciona?" className="flex flex-wrap items-center gap-2 text-sm">
+          <span>¿Ya te funciona?</span>
+          <Button size="sm" onClick={() => onConfirmar("Sí, ya funciona")}>
+            Sí, ya funciona
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onConfirmar("No, sigue igual")}>
+            No, sigue igual
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

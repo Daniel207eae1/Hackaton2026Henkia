@@ -198,6 +198,10 @@ agentes:
     requiere: [chat, salida_estructurada]
     parametros: {temperature: 0.2, max_tokens: 2000}
     cadena: [hf-gpt-oss-120b, hf-gemma4-31b]
+  usuario_simulado:  # F9: juega al colaborador en la evaluación (otra familia; sin razonamiento)
+    requiere: [chat]
+    parametros: {temperature: 0.3, max_tokens: 200}
+    cadena: [hf-gemma4-26b, hf-qwen3-30b]
   juez:  # otra familia distinta a la de los agentes evaluados (§6)
     requiere: [chat]
     parametros: {temperature: 0.0, max_tokens: 800}

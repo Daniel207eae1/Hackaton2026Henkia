@@ -54,6 +54,8 @@ class TraductorEventos:
             ]
         if tipo == "hipotesis":
             return [{"type": "data-hipotesis", "id": "hipotesis", "data": evento["datos"]}]
+        if tipo == "captura":
+            return [{"type": "data-captura", "id": f"captura-{uuid.uuid4().hex[:8]}", "data": evento["datos"]}]
         if tipo == "fuentes":
             return [{"type": "data-fuentes", "id": f"fuentes-{uuid.uuid4().hex[:8]}", "data": evento["datos"]}]
         if tipo in ("escalamiento", "cierre", "masivo"):

@@ -22,16 +22,18 @@ pytest -m en_vivo
 |---|---|
 | `app/api/` | Rutas y esquemas. `stream_protocol.py` = único traductor al UI Message Stream (ADR 0002) |
 | `app/orquestador/` | `estado.py` (*blackboard* §3.4, `Etapa`), `grafo.py` (LangGraph §3.5; aristas en código), `nodos_accion.py` (F4: Decision → AprobacionN2 → Consentimiento → Ejecucion → Verificacion) |
-| `app/agentes/` | `diagnosticador.py` (reglas + LLM con evidencia citada), `documentacion.py` (ficha N2 y registro de cierre desde el estado), `interprete.py` (slots + acción candidata, 1 llamada), `masivos.py` (clúster + incidente, sin LLM, ADR 0014), `conversacional.py`, `contexto.py` (lecturas MCP y tablero, sin LLM) + `prompts/<nombre>.md` (fallback del prompt de Langfuse) |
+| `app/agentes/` | `diagnosticador.py` (reglas + LLM con evidencia citada), `documentacion.py` (ficha N2 y registro de cierre desde el estado), `interprete.py` (slots + acción candidata, 1 llamada), `masivos.py` (clúster + incidente, sin LLM, ADR 0014), `curador_kb.py` (Módulo A por lotes: CLI + `POST /api/kb/lote`, ADR 0016), `conversacional.py`, `contexto.py` (lecturas MCP y tablero, sin LLM) + `prompts/<nombre>.md` (fallback del prompt de Langfuse) |
 | `app/llm/` | Puerto, adaptadores (`openai_compatible`, `fake`), `config_modelos.py`, `registro.py` |
 | `app/politicas/` | `catalogo.py`: catálogo (`config/catalogo_acciones.yaml`, validado contra la lista blanca del MCP) y ANS |
-| `app/rag/` | `kb.py`: categorías, recetas con prior del historial, secciones, `clasificar` (F3); `reportes.py`: reportes, `buscar_reportes_similares` e incidentes masivos (F2) |
+| `app/rag/` | `kb.py`: categorías, recetas con prior del historial, secciones, `clasificar` (F3); `reportes.py`: reportes, `buscar_reportes_similares` e incidentes masivos (F2); `curaduria.py`: historial y `propuestas_kb` (F8); `publicacion_kb.py`: valida el borrador y lo parte en fragmentos para `conocimiento.publicar_propuesta` de P2 (ADR 0019) |
 | `app/integraciones/zabbix/` | MCP `zabbix-ofimatica` (ADR 0007): `mcp_cliente.py` (transporte), `catalogo_mcp.py` (lista blanca), `puerta.py` (único punto de llamada: consentimiento, N2, un solo uso) |
+| `app/integraciones/capturas.py` | Almacén de capturas saneadas (volumen `capturas`, nunca servido por HTTP) |
 | `app/integraciones/itsm/` | ITSM sobre `operacion`: proyección idempotente por turno (`postgres.py`) + doble (`repositorio.py`), ADR 0010 |
-| `app/seguridad/` | `ver_como.py`, `guardia_entrada.py` (heurística + respuestas fijas), `compuerta_preguntas.py` (filtro por frase), `extractor_cuarentena.py` (Dual LLM, único que lee logs) |
+| `app/seguridad/` | `ver_como.py`, `guardia_entrada.py` (heurística + respuestas fijas), `compuerta_preguntas.py` (filtro por frase), `extractor_cuarentena.py` (Dual LLM, único que lee logs), `vision_cuarentena.py` (capturas: saneamiento + OCR + visión, ADR 0015), `limite_tasa.py` (POST por persona: `LIMITE_CHAT_POR_MIN`, `LIMITE_POST_POR_MIN`) |
 | `app/observabilidad/` | Fachada de Langfuse (no-op sin claves), `mask` |
 | `app/directorio/` | Puerto `org`: `postgres.py` (BD de P2, rol `app_rw`, ADR 0009) y doble en memoria (sin `DATABASE_URL`) |
 | `config/` | `modelos.yaml`, `catalogo_acciones.yaml`, `ans.yaml` (versionados) |
+| `evaluacion/` | F9, proceso APARTE: `escenarios.yaml` (jurado + red team), `equipo_simulado.py`, `ejecutar.py` (usuario simulado, métricas, Langfuse). `app/` nunca lo importa |
 
 ## Cómo agregar un agente
 1. Declara el agente en `config/modelos.yaml` (`requiere`, `parametros`, `cadena`).
@@ -62,6 +64,12 @@ humanas son `interrupt()` y se reanudan solo desde endpoints que validan el toke
 - Resultados = datos: extrae campos de lista blanca (ver `app/agentes/contexto.py`); `no_confiable` → extractor.
 - `GET /api/salud/zabbix` compara la lista blanca con `tools/list`. Pruebas: `tests/dobles.py::MCPFalso`.
 
-## Estado F0
-Directorio real desde la BD de P2 (túnel `db-tunel`, rol `app_rw`, ADR 0009); `MemorySaver` (falta el esquema `orquestador`); Contexto y ChequeoMasivo ya leen Zabbix
-por el MCP (solo lectura). Al llegar `db/CONTRATO_SQL.md`: `RepositorioDirectorioPostgres` y `CHECKPOINTER=postgres`.
+## Prompts
+Los 6 prompts (`conversacional`, `interprete`, `diagnosticador`, `extractor`, `vision`, `curador`) se cargan con
+`prompt_vigente(nombre[, marcador])` desde Langfuse, con el `.md` embebido como respaldo. Si una versión de Langfuse
+no trae el marcador `{m}`, se usa la embebida: así una edición en Langfuse no puede quitar la cuarentena.
+
+## Persistencia del caso (ADR 0018)
+`MemorySaver` + **rehidratación** desde el registro ITSM (`operacion.casos.estado_caso` + `operacion.mensajes`): si el
+caso no está en memoria (reinicio), `_estado_del_caso` lo restaura como turno terminado. `CHECKPOINTER=postgres` queda
+para cuando P2 conceda el esquema `orquestador`.

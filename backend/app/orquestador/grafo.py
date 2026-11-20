@@ -29,6 +29,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from app.agentes.contexto import (
+    NIVEL_TECNICO,
     NOMBRE_SERVICIO,
     SERVICIO_POR_APP,
     LineaRevision,
@@ -54,6 +55,7 @@ from app.llm.registro import SinModeloDisponible
 from app.observabilidad.langfuse import evento, observacion, score_traza
 from app.orquestador.estado import EstadoCaso, Etapa
 from app.orquestador.nodos_accion import FlujoAccion
+from app.orquestador.nodos_captura import FlujoCaptura
 from app.orquestador.nodos_diagnostico import FlujoDiagnostico
 from app.politicas.catalogo import catalogo
 from app.seguridad.compuerta_preguntas import FiltroPreguntas, disponibles_desde_slots
@@ -65,6 +67,10 @@ MENSAJE_SIN_MODELO = (
 )
 MENSAJE_SOLO_CONSULTABLE = (
     "Ya revisé los datos técnicos de tu equipo. Cuéntame qué ves en pantalla y desde cuándo pasa."
+)
+MENSAJE_SIGO_REVISANDO = (
+    "Sigo con tu caso con lo que ya me contaste y lo que revisé en tu equipo. Si notas algo nuevo (un mensaje en "
+    "pantalla, un cambio), cuéntamelo; si prefieres, usa «Hablar con una persona»."
 )
 NOMBRES_APP = {
     "outlook": "Outlook",
@@ -90,11 +96,18 @@ NOMBRES_SINTOMA = {
 }
 
 
+# Señales en CUALQUIER parte de la respuesta (no solo al inicio): «Vale, ya lo hice. Sí, quedó resuelto» es sí;
+# «No, ya no veo ningún error» también es sí; «sí, pero sigue fallando» es ambigua y se vuelve a preguntar.
 _SI = re.compile(
-    r"^\s*(si\b|claro|ya (funciona|quedo|sirve|me (funciona|sirve|abre|carga|imprime|sincroniza))|listo|perfecto|"
-    r"funciona|resuelto|solucionado|quedo (bien|resuelto)|excelente)"
+    r"\b(si|claro|listo|perfecto|excelente|resuelto|solucionado|funciona(ndo)? bien|todo bien|"
+    r"ya (funciona|quedo|sirve|esta|me (funciona|sirve|abre|carga|imprime|sincroniza))|quedo (bien|resuelto|listo)|"
+    r"ya no (veo|sale|aparece|hay|me sale)\b[^.]*\b(error|mensaje|problema|aviso))\b"
 )
-_NO = re.compile(r"^\s*(no\b|sigue|todavia|aun no|igual|persiste|nada|tampoco|sigo con)")
+_NO = re.compile(
+    r"\b(sigue|todavia (no|falla|sale|aparece)|aun no|no funciona|no sirve|persiste|tampoco|sigo con|"
+    r"no (me )?(abre|carga|imprime|sincroniza|quedo|se soluciono|se resolvio|ha (cambiado|funcionado))|"
+    r"igual que antes|(el )?mismo (error|problema))\b"
+)
 MENSAJE_CASO_ESCALADO = (
     "Tu caso ya está con un técnico de N2, que tiene todo lo que revisamos. Si es un problema distinto, "
     "usa «Nuevo caso»."
@@ -103,6 +116,13 @@ MENSAJE_CASO_CERRADO = (
     "Este caso ya quedó cerrado. Si el problema volvió o es otro distinto, usa «Nuevo caso» y lo reviso."
 )
 VINCULADO = ("posible_masivo", "masivo_confirmado")
+
+
+def normalizar_codigo(c: str) -> str:
+    return "0x" + c[2:].upper() if c.lower().startswith("0x") else c.upper()
+
+
+CODIGO_USUARIO = re.compile(r"\b(ERR-SIM-[0-9A-Fa-f]{4}|0x[0-9A-Fa-f]{8})\b", re.IGNORECASE)
 
 
 def texto_masivo_confirmado(servicio: str, mensaje: str | None, hora: str | None, por_n2: bool = False) -> str:
@@ -143,10 +163,13 @@ def respuesta_confirmacion(texto: str) -> str:
     """«si» | «no» | «ambigua» para la pregunta «¿ya te funciona?» (sin LLM)."""
     t = unicodedata.normalize("NFKD", texto.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
-    if _NO.search(t):
+    no, si = bool(_NO.search(t)), bool(_SI.search(t))
+    if no and not si:
         return "no"
-    if _SI.search(t):
+    if si and not no:
         return "si"
+    if not si and not no and re.match(r"\s*no\b", t):
+        return "no"  # «no» a secas
     return "ambigua"
 
 
@@ -203,6 +226,7 @@ def construir_grafo(
     masivo_min_equipos: int = 3,
     diagnostico: FlujoDiagnostico | None = None,
     masivos: AgenteMasivos | None = None,
+    captura: FlujoCaptura | None = None,
 ) -> StateGraph:
     def hacia_diagnostico(estado: EstadoCaso) -> str:
         """F3: entra al ciclo de hipótesis si aplica; si no, Decision (acción candidata del intérprete)."""
@@ -257,6 +281,19 @@ def construir_grafo(
             for b in nuevas:
                 evento("seguridad.bandera", metadata={"bandera": b["bandera"], "caso_id": estado["case_id"]})
         cambios["seguridad"] = seguridad
+        # Código de error escrito por el usuario (p. ej., tras una captura no concluyente): regex, nunca el LLM.
+        if m_cod := CODIGO_USUARIO.search(texto):
+            slots = dict(cambios.get("slots") if "slots" in cambios else estado.get("slots") or {})
+            if (slots.get("codigo_error") or {}).get("origen") != "captura":  # nunca pisa un código ya anclado
+                codigo = normalizar_codigo(m_cod.group(1))
+                vistos = {
+                    k
+                    for c in estado.get("capturas") or []
+                    for k in [*(c.get("codigos_ocr") or []), c.get("codigo_modelo")]
+                }
+                # Escrito por el usuario: solo confirma si una captura del caso lo corrobora (§3.9).
+                slots["codigo_error"] = {"valor": codigo, "origen": "usuario", "corroborado": codigo in vistos}
+                cambios["slots"] = slots
         cambios["motivo_escalamiento"] = (
             "pide_humano" if g.humano else ("presupuesto_agotado" if turnos > max_turnos else None)
         )
@@ -276,6 +313,11 @@ def construir_grafo(
             return Etapa.ESCALAR.value  # interrupción global: sin intentar retener al usuario
         if guardia.get("prohibida") or guardia.get("identidad"):
             return Etapa.RESPUESTA_POLITICA.value
+        if captura is not None and FlujoCaptura.hay_capturas(estado):
+            return Etapa.CAPTURA.value  # Módulo B: primero las capturas del turno (en cuarentena)
+        return tras_captura(estado)
+
+    def tras_captura(estado: EstadoCaso) -> str:
         if espera := FlujoAccion.hay_espera(estado):
             return espera  # consentimiento pendiente o aprobación N2: se retoma, nunca se pide de nuevo
         m = estado.get("masivo") or {}
@@ -625,6 +667,8 @@ def construir_grafo(
                 (estado.get("contexto_tecnico") or {}).get("consultas_fallidas", []),
                 estado.get("sintoma"),
             )
+            if nivel := NIVEL_TECNICO.get((estado.get("perfil_usuario") or {}).get("nivel_tecnico") or ""):
+                contexto_txt += "\n\n" + nivel
             if resumen_diag := resumen_diagnostico(estado.get("diagnostico") or {}):
                 contexto_txt += "\n\n" + resumen_diag
             if (estado.get("sintoma") or {}).get("fuera_de_alcance") == "hardware":
@@ -651,7 +695,10 @@ def construir_grafo(
                 if not partes:
                     emitir([MENSAJE_SIN_MODELO])
             if not "".join(partes).strip():
-                emitir([MENSAJE_SOLO_CONSULTABLE])  # todo lo que dijo era preguntar lo consultable
+                # Todo lo que dijo era preguntar lo consultable. Si el síntoma ya se entendió, NO se vuelve a preguntar
+                # por el problema (parecería que el sistema lo olvidó).
+                ya_entendido = (estado.get("sintoma") or {}).get("aplicacion") not in (None, "desconocida")
+                emitir([MENSAJE_SIGO_REVISANDO if ya_entendido else MENSAJE_SOLO_CONSULTABLE])
             texto = "".join(partes)
             obs.update(output=texto, metadata={"bloqueadas": ",".join(filtro.bloqueadas)})
         metricas = dict(estado.get("metricas") or {"preguntas": 0, "bloqueos": 0})
@@ -837,6 +884,13 @@ def construir_grafo(
         g.add_conditional_edges(
             Etapa.GUIA.value, diagnostico.tras_guia, {Etapa.ESCALAR.value: Etapa.ESCALAR.value, "fin": END}
         )
+    destinos_resto = [
+        Etapa.APROBACION_N2.value,
+        Etapa.CONSENTIMIENTO.value,
+        Etapa.INFORMAR_MASIVO.value,
+        Etapa.CONFIRMACION.value,
+        Etapa.INTERPRETACION.value,
+    ]
     g.add_edge(START, Etapa.RECEPCION.value)
     g.add_conditional_edges(
         Etapa.RECEPCION.value,
@@ -845,13 +899,13 @@ def construir_grafo(
             "CasoTerminado",
             Etapa.ESCALAR.value,
             Etapa.RESPUESTA_POLITICA.value,
-            Etapa.APROBACION_N2.value,
-            Etapa.CONSENTIMIENTO.value,
-            Etapa.INFORMAR_MASIVO.value,
-            Etapa.CONFIRMACION.value,
-            Etapa.INTERPRETACION.value,
+            *destinos_resto,
+            *([Etapa.CAPTURA.value] if captura is not None else []),
         ],
     )
+    if captura is not None:
+        g.add_node(Etapa.CAPTURA.value, captura.captura)
+        g.add_conditional_edges(Etapa.CAPTURA.value, tras_captura, destinos_resto)
     g.add_conditional_edges(
         Etapa.INFORMAR_MASIVO.value,
         tras_informar_masivo,
